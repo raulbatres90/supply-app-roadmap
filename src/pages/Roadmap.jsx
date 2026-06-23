@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, Trash2, Save, MessageSquare, X,
   GanttChartSquare, Table as TableIcon, ChevronDown, ChevronRight,
+  Trash, RotateCcw, ArrowLeft,
 } from 'lucide-react';
 import { Crosshair } from 'lucide-react';
 import { Button, Input, Select, Textarea, Card, toast } from '@/components/ui';
@@ -106,9 +107,23 @@ export default function RoadmapPage() {
     try { localStorage.setItem('dfa:roadmap:collapsed-phases', JSON.stringify(phaseNames)); } catch {}
   };
 
-  const { data: tasks = [], isLoading } = useQuery({ queryKey: ['internal-tasks'], queryFn: api.listTasks });
+  // Modo: 'active' = vista normal, 'trash' = papelera (tareas soft-deleted)
+  const [trashMode, setTrashMode] = useState(false);
+
+  const { data: tasks = [], isLoading } = useQuery({
+    queryKey: ['internal-tasks', trashMode ? 'trash' : 'active'],
+    queryFn: () => api.listTasks({ onlyDeleted: trashMode }),
+  });
   const { data: members = [] } = useQuery({ queryKey: ['internal-members'], queryFn: api.listMembers });
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['internal-tasks'] });
+  const { data: trashCount = 0 } = useQuery({
+    queryKey: ['internal-trash-count'],
+    queryFn: api.countDeletedTasks,
+    refetchInterval: 10000, // poll cada 10s para mantener badge actualizado
+  });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['internal-tasks'] });
+    queryClient.invalidateQueries({ queryKey: ['internal-trash-count'] });
+  };
 
   const updateMutation = useMutation({
     mutationFn: ({ id, fields }) => api.updateTask(id, fields),
@@ -122,8 +137,23 @@ export default function RoadmapPage() {
   });
   const deleteMutation = useMutation({
     mutationFn: api.deleteTask,
-    onSuccess: () => { invalidate(); setSelectedTaskId(null); toast.success('Tarea eliminada'); },
+    onSuccess: () => { invalidate(); setSelectedTaskId(null); toast.success('Tarea enviada a la papelera'); },
     onError: (e) => toast.error(e?.response?.data?.error || 'Error al eliminar'),
+  });
+  const restoreMutation = useMutation({
+    mutationFn: api.restoreTask,
+    onSuccess: () => { invalidate(); setSelectedTaskId(null); toast.success('Tarea restaurada'); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Error al restaurar'),
+  });
+  const purgeMutation = useMutation({
+    mutationFn: (id) => api.deleteTask(id, { permanent: true }),
+    onSuccess: () => { invalidate(); setSelectedTaskId(null); toast.success('Tarea borrada permanentemente'); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Error al borrar'),
+  });
+  const emptyTrashMutation = useMutation({
+    mutationFn: api.emptyTrash,
+    onSuccess: (data) => { invalidate(); setSelectedTaskId(null); toast.success(`Papelera vaciada (${data.purged} tareas)`); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Error al vaciar papelera'),
   });
 
   const phases = useMemo(() => [...new Set(tasks.map(t => t.phase).filter(Boolean))], [tasks]);
@@ -154,7 +184,46 @@ export default function RoadmapPage() {
 
   return (
     <div>
-      {/* ─── Stats band — cards con accent strip por métrica ─── */}
+      {/* ─── Trash mode banner ─── */}
+      {trashMode && (
+        <section className="px-6 pt-5">
+          <div className="rounded-xl border-2 border-dashed border-[var(--color-rose)] bg-[var(--color-rose-soft)]/40 p-4 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-lg bg-[var(--color-rose-soft)] flex items-center justify-center flex-shrink-0">
+              <Trash className="w-5 h-5 text-[var(--color-rose)]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-display text-[15px] font-semibold tracking-tighter text-[var(--color-ink)]">Papelera de tareas</p>
+              <p className="text-[12px] text-[var(--color-ink-2)] mt-0.5">
+                {tasks.length === 0
+                  ? 'No hay tareas eliminadas. Cuando borres una tarea aparece acá durante el tiempo que vos quieras.'
+                  : `${tasks.length} tarea${tasks.length !== 1 ? 's' : ''} eliminada${tasks.length !== 1 ? 's' : ''}. Click en cualquiera para ver detalle y restaurarla.`}
+              </p>
+            </div>
+            {tasks.length > 0 && (
+              <button
+                onClick={() => {
+                  if (confirm(`¿Vaciar la papelera? Se borrarán ${tasks.length} tareas PERMANENTEMENTE. Esta acción no se puede deshacer.`)) {
+                    emptyTrashMutation.mutate();
+                  }
+                }}
+                className="text-[11px] font-medium text-[var(--color-rose)] hover:bg-[var(--color-rose-soft)] px-3 py-1.5 rounded-md transition-colors border border-[var(--color-rose)]/40"
+                title="Borrar permanentemente todas las tareas de la papelera"
+              >
+                Vaciar papelera
+              </button>
+            )}
+            <button
+              onClick={() => { setTrashMode(false); setSelectedTaskId(null); }}
+              className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-ink-2)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-3)] px-3 py-1.5 rounded-md transition-colors"
+            >
+              <ArrowLeft className="w-3 h-3" /> Volver al tablero
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ─── Stats band — cards con accent strip por métrica (solo en modo activo) ─── */}
+      {!trashMode && (
       <section className="px-6 pt-5 pb-3">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <MetricCard label="Total"      value={stats.total}      icon="◇" tone="ink" />
@@ -165,6 +234,7 @@ export default function RoadmapPage() {
           <ProgressCard label="Progreso" value={stats.pct} />
         </div>
       </section>
+      )}
 
       {/* ─── Toolbar ─────────────────────────────────────────────────── */}
       <section className="px-6 pb-3 sticky top-[57px] z-10 bg-gradient-to-b from-[var(--color-canvas)] via-[var(--color-canvas)] to-transparent">
@@ -219,6 +289,23 @@ export default function RoadmapPage() {
             </button>
           </div>
 
+          {/* Papelera button con badge de count — solo visible cuando NO estamos en trashMode */}
+          {!trashMode && (
+            <button
+              onClick={() => setTrashMode(true)}
+              className="flex items-center gap-1.5 h-8 px-2.5 text-[11px] font-medium text-[var(--color-ink-2)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-3)] rounded-md transition-colors border border-[var(--color-border)]"
+              title={`Ver tareas eliminadas (${trashCount})`}
+            >
+              <Trash className="w-3 h-3" />
+              <span>Papelera</span>
+              {trashCount > 0 && (
+                <span className="font-mono text-[10px] tabular bg-[var(--color-rose-soft)] text-[var(--color-rose)] px-1.5 py-px rounded-sm font-semibold">
+                  {trashCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <Button variant="accent" size="sm" onClick={() => createMutation.mutate({ title: 'Nueva tarea', phase: filterPhase !== 'all' ? filterPhase : null, position: tasks.length })}>
             <Plus className="w-3.5 h-3.5" /> Nueva
           </Button>
@@ -241,9 +328,12 @@ export default function RoadmapPage() {
           <TaskDetailPanel
             task={selectedTask}
             members={members}
+            isDeleted={trashMode}
             onClose={() => setSelectedTaskId(null)}
             onUpdate={(fields) => updateMutation.mutate({ id: selectedTask.id, fields })}
-            onDelete={() => { if (confirm('¿Eliminar esta tarea? Subtareas y comentarios también se borran.')) deleteMutation.mutate(selectedTask.id); }}
+            onDelete={() => { if (confirm('¿Enviar esta tarea a la papelera? Podés restaurarla después.')) deleteMutation.mutate(selectedTask.id); }}
+            onRestore={() => restoreMutation.mutate(selectedTask.id)}
+            onPurge={() => { if (confirm('¿Borrar PERMANENTEMENTE? Esta acción no se puede deshacer.')) purgeMutation.mutate(selectedTask.id); }}
             isSaving={updateMutation.isPending}
           />
         )}
@@ -1277,7 +1367,7 @@ function HoverTooltip({ task }) {
 }
 
 // ─── Side panel ─────────────────────────────────────────────────────────────
-function TaskDetailPanel({ task, members, onClose, onUpdate, onDelete, isSaving }) {
+function TaskDetailPanel({ task, members, onClose, onUpdate, onDelete, onRestore, onPurge, isDeleted, isSaving }) {
   const [local, setLocal] = useState(task);
   const [debounce, setDebounce] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
@@ -1301,16 +1391,36 @@ function TaskDetailPanel({ task, members, onClose, onUpdate, onDelete, isSaving 
         {/* Panel header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-paper)]">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-3)]">Detalle</span>
-            <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest" style={{ color: saveColor }}>
-              <span className="w-1 h-1 rounded-full" style={{ background: saveColor }} />
-              {saveStatus}
-            </span>
+            {isDeleted ? (
+              <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-[var(--color-rose)] font-semibold">
+                <Trash className="w-3 h-3" /> En papelera
+              </span>
+            ) : (
+              <>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-3)]">Detalle</span>
+                <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest" style={{ color: saveColor }}>
+                  <span className="w-1 h-1 rounded-full" style={{ background: saveColor }} />
+                  {saveStatus}
+                </span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-1">
-            <Button size="sm" variant="ghost" onClick={onDelete} title="Eliminar">
-              <Trash2 className="w-3.5 h-3.5 text-[var(--color-rose)]" />
-            </Button>
+            {isDeleted ? (
+              <>
+                <Button size="sm" variant="ghost" onClick={onRestore} title="Restaurar al tablero" className="text-[var(--color-emerald)] hover:bg-[var(--color-emerald-soft)]">
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="ml-1 text-[11px] font-medium">Restaurar</span>
+                </Button>
+                <Button size="sm" variant="ghost" onClick={onPurge} title="Borrar permanentemente">
+                  <Trash2 className="w-3.5 h-3.5 text-[var(--color-rose)]" />
+                </Button>
+              </>
+            ) : (
+              <Button size="sm" variant="ghost" onClick={onDelete} title="Enviar a la papelera">
+                <Trash2 className="w-3.5 h-3.5 text-[var(--color-rose)]" />
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={onClose} title="Cerrar">
               <X className="w-3.5 h-3.5" />
             </Button>

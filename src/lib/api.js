@@ -23,10 +23,16 @@ export const upsertMember  = (m)       => api.post(`${BASE}/members`, m).then(r 
 export const deleteMember  = (id)      => api.delete(`${BASE}/members/${id}`).then(r => r.data);
 
 // Tasks
-export const listTasks     = ()        => api.get(`${BASE}/tasks`).then(r => r.data);
-export const createTask    = (t)       => api.post(`${BASE}/tasks`, t).then(r => r.data);
-export const updateTask    = (id, t)   => api.patch(`${BASE}/tasks/${id}`, t).then(r => r.data);
-export const deleteTask    = (id)      => api.delete(`${BASE}/tasks/${id}`).then(r => r.data);
+export const listTasks         = ({ onlyDeleted = false } = {}) =>
+  api.get(`${BASE}/tasks`, { params: onlyDeleted ? { deleted: 1 } : {} }).then(r => r.data);
+export const countDeletedTasks = () => api.get(`${BASE}/tasks/deleted-count`).then(r => r.data.count);
+export const createTask        = (t)       => api.post(`${BASE}/tasks`, t).then(r => r.data);
+export const updateTask        = (id, t)   => api.patch(`${BASE}/tasks/${id}`, t).then(r => r.data);
+// Soft-delete por default; pasar { permanent: true } para borrado real
+export const deleteTask        = (id, { permanent = false } = {}) =>
+  api.delete(`${BASE}/tasks/${id}`, { params: permanent ? { permanent: 1 } : {} }).then(r => r.data);
+export const restoreTask       = (id) => api.post(`${BASE}/tasks/${id}/restore`).then(r => r.data);
+export const emptyTrash        = ()   => api.delete(`${BASE}/tasks/trash/empty`).then(r => r.data);
 
 // Comments
 export const listComments  = (taskId)  => api.get(`${BASE}/tasks/${taskId}/comments`).then(r => r.data);
