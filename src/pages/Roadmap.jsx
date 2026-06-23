@@ -163,8 +163,9 @@ export default function RoadmapPage() {
       if (filterPhase !== 'all' && t.phase !== filterPhase) return false;
       if (filterStatus !== 'all' && t.status !== filterStatus) return false;
       if (filterAssignee !== 'all') {
-        if (filterAssignee === 'unassigned') { if (t.assignee_id) return false; }
-        else if (t.assignee_id !== filterAssignee) return false;
+        const ids = (t.assignees || []).map(a => a.id);
+        if (filterAssignee === 'unassigned') { if (ids.length > 0) return false; }
+        else if (!ids.includes(filterAssignee)) return false;
       }
       if (q && !(t.title || '').toLowerCase().includes(q) && !(t.description || '').toLowerCase().includes(q)) return false;
       return true;
@@ -561,13 +562,15 @@ function TaskRow({ task, isSelected, onSelect }) {
         <span className="text-[12px] font-medium" style={{ color: priority.fg }}>{priority.label}</span>
       </td>
 
-      {/* Asignada */}
+      {/* Asignada — avatar stack si hay múltiples, single avatar + nombre si solo uno */}
       <td className="px-3 py-2.5">
-        {task.assignee_name ? (
+        {task.assignees?.length === 1 ? (
           <span className="inline-flex items-center gap-1.5">
-            <Avatar name={task.assignee_name} color={task.assignee_color} size={5} />
-            <span className="text-[12px] text-[var(--color-ink-2)] truncate max-w-[88px]">{task.assignee_name.split(' ')[0]}</span>
+            <Avatar name={task.assignees[0].display_name} color={task.assignees[0].color} size={5} />
+            <span className="text-[12px] text-[var(--color-ink-2)] truncate max-w-[88px]">{task.assignees[0].display_name.split(' ')[0]}</span>
           </span>
+        ) : task.assignees?.length > 1 ? (
+          <AvatarStack assignees={task.assignees} max={3} size={5} />
         ) : (
           <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-4)]">—</span>
         )}
@@ -618,6 +621,138 @@ function Avatar({ name, color, size = 5 }) {
     >
       {initials}
     </span>
+  );
+}
+
+// Multi-select de assignees — chips clickables + dropdown para agregar.
+function AssigneeMultiSelect({ members, value = [], onChange }) {
+  const [open, setOpen] = React.useState(false);
+  const popoverRef = React.useRef(null);
+  const valueIds = new Set(value.map(v => v.id));
+  const available = members.filter(m => !valueIds.has(m.id));
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const toggle = (member) => {
+    if (valueIds.has(member.id)) {
+      onChange(value.filter(v => v.id !== member.id));
+    } else {
+      onChange([...value, { id: member.id, display_name: member.display_name, color: member.color, email: member.email }]);
+    }
+  };
+
+  return (
+    <div className="relative" ref={popoverRef}>
+      <div
+        className="min-h-[36px] flex items-center flex-wrap gap-1.5 px-2 py-1.5 border border-[var(--color-border)] rounded-md bg-[var(--color-paper)] cursor-pointer hover:border-[var(--color-accent)] transition-colors"
+        onClick={() => setOpen(true)}
+      >
+        {value.length === 0 ? (
+          <span className="text-[12px] text-[var(--color-ink-4)] italic">Sin asignar — click para agregar</span>
+        ) : (
+          value.map(a => (
+            <span
+              key={a.id}
+              onClick={(e) => { e.stopPropagation(); toggle(a); }}
+              className="inline-flex items-center gap-1 pl-0.5 pr-1.5 py-0.5 rounded-full bg-[var(--color-paper-3)] border border-[var(--color-border)] hover:bg-[var(--color-paper-4)] cursor-pointer group"
+              title={`Quitar a ${a.display_name}`}
+            >
+              <span
+                className="w-4 h-4 rounded-full text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[8px]"
+                style={{ background: a.color || 'var(--color-accent)' }}
+              >
+                {a.display_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+              </span>
+              <span className="text-[11px] font-medium text-[var(--color-ink-2)]">{a.display_name.split(' ')[0]}</span>
+              <X className="w-2.5 h-2.5 text-[var(--color-ink-4)] group-hover:text-[var(--color-rose)] ml-0.5" />
+            </span>
+          ))
+        )}
+        <span className="ml-auto text-[var(--color-ink-4)] text-[10px] font-mono uppercase tracking-widest pr-1">
+          {available.length > 0 ? '+ agregar' : 'todos asignados'}
+        </span>
+      </div>
+
+      {open && (
+        <div className="absolute z-30 mt-1 left-0 right-0 bg-[var(--color-paper)] border border-[var(--color-border)] rounded-md shadow-[var(--shadow-card-hover)] py-1 max-h-[240px] overflow-y-auto">
+          {members.length === 0 ? (
+            <p className="px-3 py-3 text-[11px] text-[var(--color-ink-4)] italic">Sin personas en el equipo. Agregalas en el tab Equipo.</p>
+          ) : (
+            members.map(m => {
+              const isSelected = valueIds.has(m.id);
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => toggle(m)}
+                  className={cn(
+                    'w-full flex items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors',
+                    isSelected ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-paper-2)]',
+                  )}
+                >
+                  <span
+                    className="w-5 h-5 rounded-full text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[9px] flex-shrink-0"
+                    style={{ background: m.color || 'var(--color-accent)' }}
+                  >
+                    {m.display_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className={cn('text-[12px] flex-1', isSelected ? 'font-semibold text-[var(--color-accent-text)]' : 'text-[var(--color-ink-2)]')}>
+                    {m.display_name}
+                  </span>
+                  {isSelected && <span className="font-mono text-[10px] text-[var(--color-accent)]">✓</span>}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Stack de avatares solapados — muestra hasta `max` y "+N" si hay más.
+function AvatarStack({ assignees = [], max = 3, size = 5 }) {
+  if (!assignees.length) {
+    return <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-4)]">—</span>;
+  }
+  const visible = assignees.slice(0, max);
+  const overflow = assignees.length - max;
+  const sizePx = { 5: 20, 6: 24, 7: 28 }[size] || 20;
+  return (
+    <div
+      className="flex items-center"
+      title={assignees.map(a => a.display_name).join(', ')}
+    >
+      {visible.map((a, i) => (
+        <span
+          key={a.id}
+          className={cn('rounded-full text-[var(--color-paper)] flex items-center justify-center font-display font-semibold flex-shrink-0 border-[1.5px] border-[var(--color-paper)]', `text-[${size === 5 ? 9 : 10}px]`)}
+          style={{
+            background: a.color || 'var(--color-accent)',
+            width: sizePx, height: sizePx,
+            marginLeft: i === 0 ? 0 : -6,
+            zIndex: max - i,
+          }}
+        >
+          {a.display_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+        </span>
+      ))}
+      {overflow > 0 && (
+        <span
+          className="rounded-full text-[var(--color-ink-2)] bg-[var(--color-paper-3)] border-[1.5px] border-[var(--color-paper)] flex items-center justify-center font-mono font-semibold flex-shrink-0 text-[9px] tabular"
+          style={{ width: sizePx, height: sizePx, marginLeft: -6 }}
+        >
+          +{overflow}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -1468,11 +1603,12 @@ function TaskDetailPanel({ task, members, onClose, onUpdate, onDelete, onRestore
             <Field label="Fase">
               <Input value={local.phase || ''} onChange={e => queueSave({ phase: e.target.value })} placeholder="ej: Pre-launch" className="h-8 text-[12px]" />
             </Field>
-            <Field label="Asignada a">
-              <Select value={local.assignee_id || 'unassigned'} onChange={v => queueSave({ assignee_id: v === 'unassigned' ? null : v })} className="h-8 text-[12px]">
-                <option value="unassigned">Sin asignar</option>
-                {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-              </Select>
+            <Field label="Asignadas">
+              <AssigneeMultiSelect
+                members={members}
+                value={local.assignees || []}
+                onChange={(newAssignees) => queueSave({ assignee_ids: newAssignees.map(a => a.id) })}
+              />
             </Field>
           </div>
 
