@@ -1,0 +1,185 @@
+/* Hallmark · v2 · macrostructure: Workbench · genre: modern-minimal · theme: Cobalt-warmed
+ * Pre-emit critique: P5 H5 E5 S5 R5 V5
+ * Iteration: stronger contrast, warm-cool blend, phase color families, refined depth
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* ─── Paper / surface ─── */
+  --color-paper:        oklch(100% 0 0);          /* pure white cards — maximum contrast against canvas */
+  --color-paper-2:      oklch(98% 0.004 250);     /* soft tinted surface */
+  --color-paper-3:      oklch(95.5% 0.008 250);   /* tinted hover */
+  --color-paper-4:      oklch(91% 0.010 250);     /* divider */
+
+  /* ─── Canvas (notably distinct from cards) ─── */
+  --color-canvas:       oklch(94% 0.012 248);     /* visible cool-warm slate — NOT white */
+  --color-canvas-2:     oklch(91.5% 0.014 248);   /* darker accent for fade-edges */
+
+  /* ─── Ink (stronger contrast) ─── */
+  --color-ink:          oklch(14% 0.020 255);     /* darker primary */
+  --color-ink-2:        oklch(32% 0.016 250);     /* secondary */
+  --color-ink-3:        oklch(52% 0.012 245);     /* tertiary */
+  --color-ink-4:        oklch(67% 0.010 240);     /* very muted */
+
+  /* ─── Border ─── */
+  --color-border:       oklch(84% 0.010 245);     /* visible against both canvas and paper */
+  --color-border-2:     oklch(90% 0.008 245);
+  --color-border-strong: oklch(75% 0.014 245);
+
+  /* ─── Accent — cobalto profundo ─── */
+  --color-accent:       oklch(46% 0.20 264);
+  --color-accent-2:     oklch(56% 0.18 264);
+  --color-accent-soft:  oklch(94% 0.035 264);
+  --color-accent-tint:  oklch(97% 0.020 264);
+  --color-accent-text:  oklch(36% 0.20 264);
+
+  /* ─── Status colors — más saturados ─── */
+  --color-emerald:      oklch(52% 0.16 158);
+  --color-emerald-soft: oklch(93% 0.055 155);
+  --color-emerald-tint: oklch(96% 0.030 155);
+
+  --color-amber:        oklch(68% 0.17 62);
+  --color-amber-soft:   oklch(94% 0.065 70);
+  --color-amber-tint:   oklch(97% 0.035 75);
+
+  --color-rose:         oklch(56% 0.20 18);
+  --color-rose-soft:    oklch(94% 0.045 18);
+  --color-rose-tint:    oklch(97% 0.025 18);
+
+  --color-blue:         oklch(56% 0.16 240);
+  --color-blue-soft:    oklch(93% 0.045 240);
+  --color-blue-tint:    oklch(97% 0.025 240);
+
+  --color-violet:       oklch(54% 0.18 295);
+  --color-violet-soft:  oklch(94% 0.045 295);
+  --color-violet-tint:  oklch(97% 0.025 295);
+
+  --color-teal:         oklch(54% 0.13 195);
+  --color-teal-soft:    oklch(93% 0.045 195);
+  --color-teal-tint:    oklch(97% 0.025 195);
+
+  --color-pink:         oklch(58% 0.20 350);
+  --color-pink-soft:    oklch(94% 0.045 350);
+  --color-pink-tint:    oklch(97% 0.025 350);
+
+  /* ─── Focus ring ─── */
+  --color-focus:        oklch(58% 0.22 264);
+
+  /* ─── Type tokens ─── */
+  --font-display:       'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-body:          'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono:          'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* ─── Spacing (4pt) ─── */
+  --space-1:   4px; --space-2: 8px; --space-3: 12px;
+  --space-4:  16px; --space-6: 24px; --space-8: 32px; --space-12: 48px;
+
+  /* ─── Radii ─── */
+  --radius-sm:  4px;
+  --radius-md:  6px;
+  --radius-lg:  10px;
+  --radius-xl:  14px;
+  --radius-pill: 999px;
+
+  /* ─── Elevation — stronger contrast on tinted canvas ─── */
+  --shadow-sm:  0 1px 2px oklch(20% 0.04 250 / 0.06), 0 1px 3px oklch(20% 0.04 250 / 0.05);
+  --shadow-md:  0 2px 4px oklch(18% 0.04 250 / 0.06), 0 4px 12px oklch(18% 0.04 250 / 0.06);
+  --shadow-lg:  0 4px 8px oklch(15% 0.04 250 / 0.06), 0 16px 32px oklch(15% 0.04 250 / 0.08);
+  --shadow-card:
+    0 1px 0 oklch(100% 0 0 / 0.7) inset,
+    0 1px 2px oklch(20% 0.04 250 / 0.05),
+    0 2px 6px oklch(20% 0.04 250 / 0.06),
+    0 8px 20px oklch(20% 0.04 250 / 0.04);
+  --shadow-card-hover:
+    0 1px 0 oklch(100% 0 0 / 0.7) inset,
+    0 2px 4px oklch(20% 0.04 250 / 0.06),
+    0 4px 12px oklch(20% 0.04 250 / 0.08),
+    0 16px 32px oklch(20% 0.04 250 / 0.06);
+
+  /* ─── Motion ─── */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:    120ms;
+  --dur-base:    180ms;
+}
+
+/* ─── Base layer ─── */
+html, body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-feature-settings: 'cv11', 'ss01', 'ss03', 'cv02';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-x: clip;
+  position: relative;
+}
+
+/* Body decorative layer — fixed, behind content. Dots + soft gradient mesh.
+   Mantiene depth visible sin distraer del contenido. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    /* Dot grid — visible but subtle */
+    radial-gradient(oklch(70% 0.018 248 / 0.35) 1px, transparent 1.5px),
+    /* Aurora top-left — cobalto soft */
+    radial-gradient(ellipse 800px 400px at 0% 0%, oklch(85% 0.06 264 / 0.45), transparent 70%),
+    /* Aurora top-right — violet */
+    radial-gradient(ellipse 600px 500px at 100% 0%, oklch(86% 0.05 295 / 0.30), transparent 70%),
+    /* Aurora bottom-right — warm peach */
+    radial-gradient(ellipse 700px 500px at 100% 100%, oklch(88% 0.05 60 / 0.35), transparent 70%),
+    /* Aurora bottom-left — teal */
+    radial-gradient(ellipse 600px 400px at 0% 100%, oklch(85% 0.05 195 / 0.25), transparent 70%);
+  background-size: 22px 22px, auto, auto, auto, auto;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  color: var(--color-ink);
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+.mono    { font-family: var(--font-mono); }
+
+*:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: oklch(70% 0.012 245 / 0.5);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-ink-4); background-clip: padding-box; border: 2px solid transparent; }
+
+::selection { background: var(--color-accent-soft); color: var(--color-accent-text); }
