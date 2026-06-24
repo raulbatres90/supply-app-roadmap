@@ -1,52 +1,56 @@
 /* Hallmark · macrostructure: Workbench · theme: Cobalt-tuned
  * pre-emit critique: P5 H5 E5 S5 R5 V4
- * App shell — login + nav header + tab routing
+ * App shell — sin login. Persona picker para identificar quién comenta.
  */
 
-import { useState } from 'react';
-import { LogOut, ArrowUpRight } from 'lucide-react';
-import { Button, Input, Card, ToastContainer } from './components/ui.jsx';
+import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { LogOut, GanttChartSquare, Users, ChevronDown } from 'lucide-react';
+import { Button, Card, ToastContainer } from './components/ui.jsx';
 import { cn } from './lib/cn';
 import RoadmapPage from './pages/Roadmap.jsx';
 import TeamPage from './pages/Team.jsx';
 import { listMembers } from './lib/api';
 
+const ME_KEY = 'dfa:roadmap:me';
+
 export default function App() {
-  const [email, setEmail] = useState(() => localStorage.getItem('dfa:roadmap:email') || '');
+  const [meId, setMeId] = useState(() => localStorage.getItem(ME_KEY) || '');
   const [tab, setTab] = useState('roadmap');
-  const [authError, setAuthError] = useState(null);
-  const [authChecking, setAuthChecking] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const handleLogin = async (newEmail) => {
-    setAuthChecking(true);
-    setAuthError(null);
-    localStorage.setItem('dfa:roadmap:email', newEmail);
-    try {
-      await listMembers();
-      setEmail(newEmail);
-    } catch (err) {
-      const msg = err?.response?.data?.error || err.message || 'Error de conexión';
-      setAuthError(msg);
-      localStorage.removeItem('dfa:roadmap:email');
-    } finally {
-      setAuthChecking(false);
-    }
+  const { data: members = [], isLoading: membersLoading } = useQuery({
+    queryKey: ['internal-members'],
+    queryFn: listMembers,
+  });
+
+  // Sincroniza el email del miembro actual al localStorage para que el axios
+  // interceptor lo mande en el header X-Internal-Admin-Email (audit, no gate).
+  useEffect(() => {
+    const me = members.find(m => m.id === meId);
+    if (me?.email) localStorage.setItem('dfa:roadmap:email', me.email);
+  }, [meId, members]);
+
+  const handlePick = (memberId) => {
+    setMeId(memberId);
+    localStorage.setItem(ME_KEY, memberId);
+    setPickerOpen(false);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('dfa:roadmap:email');
-    setEmail('');
-  };
+  // Si todavía no eligió persona, mostramos el picker. Si ya tenía elegido pero
+  // ese miembro ya no existe (deleted), forzar re-pick.
+  const me = members.find(m => m.id === meId);
+  const needsPicker = !membersLoading && (!meId || !me);
 
-  if (!email) return <LoginScreen onLogin={handleLogin} error={authError} loading={authChecking} />;
+  if (needsPicker) {
+    return <PersonaPicker members={members} loading={membersLoading} onPick={handlePick} />;
+  }
 
   return (
     <div className="min-h-screen">
       <header className="bg-[var(--color-paper)]/90 backdrop-blur-xl border-b border-[var(--color-border)] sticky top-0 z-20 relative shadow-[var(--shadow-sm)]">
-        {/* Top accent strip — thin gradient line that gives the header presence */}
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[var(--color-accent)] via-[var(--color-violet)] to-[var(--color-pink)] opacity-70" />
         <div className="max-w-[1800px] mx-auto px-6 py-3 flex items-center justify-between gap-6">
-          {/* Brand left */}
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-2.5">
               <span className="relative w-7 h-7 rounded-md bg-gradient-to-br from-[var(--color-ink)] to-[oklch(28%_0.04_265)] text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[12px] shadow-[var(--shadow-sm),0_0_0_1px_oklch(100%_0_0_/_0.08)_inset]">
@@ -59,26 +63,62 @@ export default function App() {
               </div>
             </div>
 
-            {/* Tabs — underline indicator, no pill */}
             <nav className="flex items-center gap-1 -mb-3.5">
               <TabLink active={tab === 'roadmap'} onClick={() => setTab('roadmap')}>Tablero</TabLink>
               <TabLink active={tab === 'team'} onClick={() => setTab('team')}>Equipo</TabLink>
             </nav>
           </div>
 
-          {/* Right cluster */}
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex flex-col items-end leading-tight">
-              <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-3)]">Sesión</span>
-              <span className="text-[12px] text-[var(--color-ink-2)]">{email}</span>
-            </div>
+          {/* Persona switcher — quién soy actualmente */}
+          <div className="relative">
             <button
-              onClick={handleLogout}
-              title="Cerrar sesión"
-              className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-ink-3)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-3)] transition-colors duration-[var(--dur-fast)]"
+              onClick={() => setPickerOpen(o => !o)}
+              className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[var(--color-paper-3)] transition-colors"
+              title="Cambiar persona"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <span
+                className="w-6 h-6 rounded-full text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[10px]"
+                style={{ background: me.color || 'var(--color-accent)' }}
+              >
+                {me.display_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+              </span>
+              <span className="hidden sm:block text-[12px] text-[var(--color-ink-2)]">
+                Soy <strong className="text-[var(--color-ink)]">{me.display_name.split(' ')[0]}</strong>
+              </span>
+              <ChevronDown className="w-3 h-3 text-[var(--color-ink-3)]" />
             </button>
+
+            {pickerOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
+                <div className="absolute right-0 mt-1 w-56 bg-[var(--color-paper)] border border-[var(--color-border)] rounded-lg shadow-[var(--shadow-card-hover)] py-1 z-40">
+                  <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-mono font-semibold text-[var(--color-ink-3)] border-b border-[var(--color-border-2)] mb-1">
+                    Cambiar persona
+                  </div>
+                  {members.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => handlePick(m.id)}
+                      className={cn(
+                        'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors',
+                        m.id === meId ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-paper-2)]',
+                      )}
+                    >
+                      <span
+                        className="w-6 h-6 rounded-full text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[10px] flex-shrink-0"
+                        style={{ background: m.color || 'var(--color-accent)' }}
+                      >
+                        {m.display_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                      </span>
+                      <span className={cn('text-[12.5px] flex-1', m.id === meId ? 'font-semibold text-[var(--color-accent-text)]' : 'text-[var(--color-ink-2)]')}>
+                        {m.display_name}
+                      </span>
+                      {m.id === meId && <span className="font-mono text-[10px] text-[var(--color-accent)]">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -112,80 +152,65 @@ function TabLink({ children, active, onClick }) {
   );
 }
 
-// ─── Login screen ───────────────────────────────────────────────────────────
-// Editorial split: brand statement left, form right. Type-led, no centered card cliché.
-function LoginScreen({ onLogin, error, loading }) {
-  const [emailInput, setEmailInput] = useState('');
-
+// ─── Persona Picker ─────────────────────────────────────────────────────────
+// Pantalla de bienvenida: 4 avatares grandes, click en el tuyo y entrás.
+// No es login — solo te identificás para que tus comentarios queden firmados.
+function PersonaPicker({ members, loading, onPick }) {
   return (
-    <div className="min-h-screen grid md:grid-cols-[1.1fr_1fr]">
-      {/* Left panel — brand statement */}
-      <div className="hidden md:flex flex-col justify-between p-12 bg-[var(--color-ink)] text-[var(--color-paper)]">
-        <div className="flex items-center gap-2.5">
-          <span className="w-7 h-7 rounded-md bg-[var(--color-paper)] text-[var(--color-ink)] flex items-center justify-center font-display font-bold text-[12px]">D</span>
-          <span className="font-display text-[15px] font-semibold tracking-tighter">Demand Flow AI</span>
-        </div>
-
-        <div className="space-y-6 max-w-md">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--color-ink-4)]">Workspace interno</p>
-          <h1 className="font-display text-[44px] leading-[1.05] tracking-tighter">
-            El roadmap completo del lanzamiento, en un solo lugar.
+    <div className="min-h-screen flex items-center justify-center p-8">
+      <div className="w-full max-w-2xl">
+        <div className="text-center mb-12">
+          <span className="inline-flex items-center gap-2 mb-6">
+            <span className="relative w-8 h-8 rounded-md bg-gradient-to-br from-[var(--color-ink)] to-[oklch(28%_0.04_265)] text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[14px] shadow-[var(--shadow-sm)]">
+              D
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--color-accent)] ring-2 ring-[var(--color-paper)]" />
+            </span>
+            <span className="font-display text-[17px] font-semibold tracking-tighter text-[var(--color-ink)]">Demand Flow AI</span>
+            <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-3)]">Roadmap</span>
+          </span>
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[var(--color-accent-text)] mb-3">Bienvenido</p>
+          <h1 className="font-display text-[44px] leading-[1.05] tracking-tighter text-[var(--color-ink)] mb-3">
+            ¿Quién sos?
           </h1>
-          <p className="text-[14px] text-[var(--color-paper-3)] leading-relaxed max-w-sm">
-            Vista Gantt, drill-down por fase, asignación y comentarios. Una herramienta para los cuatro fundadores —
-            no para clientes.
+          <p className="text-[14px] text-[var(--color-ink-2)] max-w-md mx-auto">
+            Elegí tu avatar para que tus comentarios queden firmados. Podés cambiarlo en cualquier momento desde el header.
           </p>
         </div>
 
-        <div className="flex items-center gap-6 text-[11px] font-mono uppercase tracking-widest text-[var(--color-ink-4)]">
-          <span>v0.1.0</span>
-          <span>·</span>
-          <span>Local-only</span>
-        </div>
-      </div>
+        {loading ? (
+          <p className="text-center font-mono text-[11px] uppercase tracking-widest text-[var(--color-ink-4)]">Cargando equipo…</p>
+        ) : members.length === 0 ? (
+          <Card className="p-8 text-center">
+            <p className="text-[13px] text-[var(--color-ink-2)]">No hay personas cargadas. Andá al backend y verifica que la tabla <code className="font-mono text-[11px] bg-[var(--color-paper-3)] px-1 rounded">internal_team_members</code> tenga datos.</p>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {members.map(m => (
+              <button
+                key={m.id}
+                onClick={() => onPick(m.id)}
+                className="group flex flex-col items-center gap-3 p-5 bg-[var(--color-paper)] border border-[var(--color-border)] rounded-2xl shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] hover:-translate-y-0.5 transition-all duration-[var(--dur-base)] ease-[var(--ease-out)]"
+              >
+                <span
+                  className="w-16 h-16 rounded-full text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[22px] group-hover:scale-105 transition-transform duration-[var(--dur-base)] ease-[var(--ease-out)]"
+                  style={{
+                    background: m.color || 'var(--color-accent)',
+                    boxShadow: `0 8px 24px ${m.color || 'var(--color-accent)'}40`,
+                  }}
+                >
+                  {m.display_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                </span>
+                <span className="font-display text-[14px] font-semibold tracking-tighter text-[var(--color-ink)] text-center leading-tight">
+                  {m.display_name}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
 
-      {/* Right panel — form */}
-      <div className="flex items-center justify-center p-8 md:p-16 bg-[var(--color-paper)]">
-        <div className="w-full max-w-sm">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--color-ink-3)] mb-3">Acceso restringido</p>
-          <h2 className="font-display text-[28px] leading-tight tracking-tighter mb-2">Entrar al workspace</h2>
-          <p className="text-[13px] text-[var(--color-ink-2)] mb-8 leading-relaxed">
-            Tu correo debe estar autorizado en el backend para acceder.
-          </p>
-
-          <form onSubmit={e => { e.preventDefault(); if (emailInput.trim()) onLogin(emailInput.trim().toLowerCase()); }}>
-            <label className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-3)] block mb-2">
-              Correo del equipo
-            </label>
-            <Input
-              type="email"
-              value={emailInput}
-              onChange={e => setEmailInput(e.target.value)}
-              placeholder="tu@email.com"
-              autoFocus
-              className="h-11"
-            />
-
-            {error && (
-              <div className="mt-3 p-3 border-l-2 border-[var(--color-rose)] bg-[var(--color-rose-soft)] text-[12px] text-[var(--color-ink)]">
-                {error}
-              </div>
-            )}
-
-            <Button type="submit" variant="primary" size="lg" className="w-full mt-5" disabled={loading || !emailInput.trim()}>
-              {loading ? 'Verificando…' : (
-                <>Entrar <ArrowUpRight className="w-3.5 h-3.5" /></>
-              )}
-            </Button>
-          </form>
-
-          <p className="mt-12 text-[11px] text-[var(--color-ink-3)] leading-relaxed">
-            <span className="font-mono uppercase tracking-widest">Cómo funciona ·</span>{' '}
-            Tu correo se valida contra la allowlist del backend
-            (<code className="font-mono text-[10px] bg-[var(--color-paper-3)] px-1 py-0.5 rounded">INTERNAL_ADMIN_EMAILS</code>).
-            Sin autenticación real — diseñado para correr en localhost del equipo.
-          </p>
-        </div>
+        <p className="text-center mt-8 font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-4)]">
+          Sin contraseñas · sin emails · solo elegí quién sos
+        </p>
       </div>
     </div>
   );
