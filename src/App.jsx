@@ -5,7 +5,6 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown } from 'lucide-react';
 import { ToastContainer } from './components/ui.jsx';
 import { cn } from './lib/cn';
 import RoadmapPage from './pages/Roadmap.jsx';
@@ -15,40 +14,25 @@ import { listMembers } from './lib/api';
 const ME_KEY = 'dfa:roadmap:me';
 
 export default function App() {
-  const [meId, setMeIdState] = useState(() => localStorage.getItem(ME_KEY) || '');
   const [tab, setTab] = useState('roadmap');
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   const { data: members = [] } = useQuery({
     queryKey: ['internal-members'],
     queryFn: listMembers,
   });
 
-  // Auto-set: si todavía no eligió persona, default al primero del equipo.
-  // Si el miembro guardado ya no existe (deleted), también re-defaultear.
+  // Auto-set silencioso: la app no muestra UI de identidad, pero seguimos sincronizando
+  // un email "actual" al localStorage para que el axios interceptor lo mande en el header
+  // (audit en backend: quién comentó / quién eliminó). Default = primer miembro.
   useEffect(() => {
     if (members.length === 0) return;
-    const exists = members.find(m => m.id === meId);
-    if (!exists) {
-      setMeIdState(members[0].id);
-      localStorage.setItem(ME_KEY, members[0].id);
+    const storedId = localStorage.getItem(ME_KEY);
+    const me = members.find(m => m.id === storedId) || members[0];
+    if (me) {
+      localStorage.setItem(ME_KEY, me.id);
+      localStorage.setItem('dfa:roadmap:email', me.email || '');
     }
-  }, [members, meId]);
-
-  // Sincroniza el email del miembro actual al localStorage para que el axios
-  // interceptor lo mande en el header (audit informativo, no gate).
-  useEffect(() => {
-    const me = members.find(m => m.id === meId);
-    if (me?.email) localStorage.setItem('dfa:roadmap:email', me.email);
-  }, [meId, members]);
-
-  const setMeId = (id) => {
-    setMeIdState(id);
-    localStorage.setItem(ME_KEY, id);
-    setPickerOpen(false);
-  };
-
-  const me = members.find(m => m.id === meId);
+  }, [members]);
 
   return (
     <div className="min-h-screen">
@@ -73,60 +57,8 @@ export default function App() {
             </nav>
           </div>
 
-          {/* Persona switcher — solo visible cuando hay miembros cargados.
-              No bloquea entrar a la app, solo indica quién está comentando. */}
-          {me && (
-            <div className="relative">
-              <button
-                onClick={() => setPickerOpen(o => !o)}
-                className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[var(--color-paper-3)] transition-colors"
-                title="Cambiar quién soy (para firmar comentarios)"
-              >
-                <span
-                  className="w-6 h-6 rounded-full text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[10px]"
-                  style={{ background: me.color || 'var(--color-accent)' }}
-                >
-                  {me.display_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                </span>
-                <span className="hidden sm:block text-[12px] text-[var(--color-ink-2)]">
-                  Soy <strong className="text-[var(--color-ink)]">{me.display_name.split(' ')[0]}</strong>
-                </span>
-                <ChevronDown className="w-3 h-3 text-[var(--color-ink-3)]" />
-              </button>
-
-              {pickerOpen && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
-                  <div className="absolute right-0 mt-1 w-56 bg-[var(--color-paper)] border border-[var(--color-border)] rounded-lg shadow-[var(--shadow-card-hover)] py-1 z-40">
-                    <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-mono font-semibold text-[var(--color-ink-3)] border-b border-[var(--color-border-2)] mb-1">
-                      Cambiar persona
-                    </div>
-                    {members.map(m => (
-                      <button
-                        key={m.id}
-                        onClick={() => setMeId(m.id)}
-                        className={cn(
-                          'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors',
-                          m.id === meId ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-paper-2)]',
-                        )}
-                      >
-                        <span
-                          className="w-6 h-6 rounded-full text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[10px] flex-shrink-0"
-                          style={{ background: m.color || 'var(--color-accent)' }}
-                        >
-                          {m.display_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                        </span>
-                        <span className={cn('text-[12.5px] flex-1', m.id === meId ? 'font-semibold text-[var(--color-accent-text)]' : 'text-[var(--color-ink-2)]')}>
-                          {m.display_name}
-                        </span>
-                        {m.id === meId && <span className="font-mono text-[10px] text-[var(--color-accent)]">✓</span>}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+          {/* Persona switcher removido del header — la app no necesita identificación visible.
+              Si quisieras volver a poner el indicador "Soy [persona]", el state meId sigue activo. */}
         </div>
       </header>
 
