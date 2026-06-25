@@ -34,6 +34,12 @@ export const deleteTask        = (id, { permanent = false } = {}) =>
 export const restoreTask       = (id) => api.post(`${BASE}/tasks/${id}/restore`).then(r => r.data);
 export const emptyTrash        = ()   => api.delete(`${BASE}/tasks/trash/empty`).then(r => r.data);
 
+// Plan de negocio
+export const listPlanBlocks  = ()      => api.get(`${BASE}/plan`).then(r => r.data);
+export const createPlanBlock = (b)     => api.post(`${BASE}/plan`, b).then(r => r.data);
+export const updatePlanBlock = (id, b) => api.patch(`${BASE}/plan/${id}`, b).then(r => r.data);
+export const deletePlanBlock = (id)    => api.delete(`${BASE}/plan/${id}`).then(r => r.data);
+
 // Comments
 export const listComments  = (taskId)  => api.get(`${BASE}/tasks/${taskId}/comments`).then(r => r.data);
 export const addComment    = (taskId, body) => api.post(`${BASE}/tasks/${taskId}/comments`, { body }).then(r => r.data);

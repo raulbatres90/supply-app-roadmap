@@ -9,6 +9,7 @@ import { ToastContainer } from './components/ui.jsx';
 import { cn } from './lib/cn';
 import RoadmapPage from './pages/Roadmap.jsx';
 import TeamPage from './pages/Team.jsx';
+import BusinessPlanPage from './pages/BusinessPlan.jsx';
 import { listMembers } from './lib/api';
 
 const ME_KEY = 'dfa:roadmap:me';
@@ -53,6 +54,7 @@ export default function App() {
 
             <nav className="flex items-center gap-1 -mb-3.5">
               <TabLink active={tab === 'roadmap'} onClick={() => setTab('roadmap')}>Tablero</TabLink>
+              <TabLink active={tab === 'plan'} onClick={() => setTab('plan')}>Plan</TabLink>
               <TabLink active={tab === 'team'} onClick={() => setTab('team')}>Equipo</TabLink>
             </nav>
           </div>
@@ -63,7 +65,9 @@ export default function App() {
       </header>
 
       <main className="max-w-[1800px] mx-auto">
-        {tab === 'roadmap' ? <RoadmapPage /> : <TeamPage />}
+        {tab === 'roadmap' && <RoadmapPage />}
+        {tab === 'plan' && <BusinessPlanPage />}
+        {tab === 'team' && <TeamPage />}
       </main>
 
       <ToastContainer />
