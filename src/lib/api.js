@@ -1,8 +1,13 @@
 import axios from 'axios';
 
-// Endpoint del backend DFA (mismo backend que la app principal).
-// Configurable via VITE_BACKEND_URL en .env.local
-const BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+// Endpoint del backend DFA (mismo backend que la app principal, en Railway).
+// Prioridad: VITE_BACKEND_URL (si está seteada) → sino, según entorno:
+//   - build de producción (Vercel): Railway por default (a prueba de env mal configurada)
+//   - dev local: localhost:3001
+const PROD_BACKEND = 'https://supply-app-backend-production.up.railway.app';
+const BASE_URL =
+  import.meta.env.VITE_BACKEND_URL ||
+  (import.meta.env.PROD ? PROD_BACKEND : 'http://localhost:3001');
 
 const api = axios.create({ baseURL: BASE_URL });
 
