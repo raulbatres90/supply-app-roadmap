@@ -3,7 +3,7 @@
  * Plan de negocio editable — Canvas + preguntas clave, auto-save inline.
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { Button, Textarea, Input, toast } from '@/components/ui';
@@ -42,13 +42,32 @@ export default function BusinessPlanPage() {
   const { data: blocks = [], isLoading } = useQuery({
     queryKey: ['internal-plan'],
     queryFn: api.listPlanBlocks,
+    // Colaboración entre los 4: traé cambios de los demás cada 10s y al volver a
+    // la pestaña. El guard "dirty" de cada tarjeta evita que esto pise lo que
+    // estás escribiendo en ese momento.
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
   });
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['internal-plan'] });
 
+  // Guardado OPTIMISTA: actualiza la cache al instante (sin refetch-storm que
+  // pisaba el texto y causaba el lag). Si el guardado falla, revierte.
   const updateMut = useMutation({
     mutationFn: ({ id, fields }) => api.updatePlanBlock(id, fields),
-    onSuccess: invalidate,
-    onError: (e) => toast.error(e?.response?.data?.error || 'Error al guardar'),
+    onMutate: async ({ id, fields }) => {
+      await queryClient.cancelQueries({ queryKey: ['internal-plan'] });
+      const prev = queryClient.getQueryData(['internal-plan']);
+      queryClient.setQueryData(['internal-plan'], (old = []) =>
+        old.map(b => (b.id === id ? { ...b, ...fields } : b)));
+      return { prev };
+    },
+    onError: (e, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['internal-plan'], ctx.prev);
+      toast.error(e?.response?.data?.error || 'Error al guardar');
+    },
+    // Sin onSuccess:invalidate — la cache ya quedó actualizada; el refetchInterval
+    // reconcilia con el servidor sin interrumpir el tipeo.
   });
   const createMut = useMutation({
     mutationFn: api.createPlanBlock,
@@ -190,17 +209,52 @@ function SectionTitle({ num, title, sub }) {
   );
 }
 
+// ── Autosave robusto y colaborativo ────────────────────────────────────────
+// - Estado local inmediato (tipeo sin lag).
+// - Debounce por useRef (no re-render por tecla), acumulando TODOS los campos.
+// - dirtyRef: mientras editás, un refetch del servidor NO pisa tu texto (antes
+//   lo reventaba → esa era la causa del lag y de que "se revirtiera").
+// - flush(): guarda lo pendiente ya mismo (para onBlur / status / desmontar),
+//   así un refresh rápido no pierde lo último escrito.
+function useAutosave(block, onUpdate) {
+  const [local, setLocal] = useState(block);
+  const timerRef = useRef(null);
+  const pendingRef = useRef(null);
+  const dirtyRef = useRef(false);
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
+  useEffect(() => {
+    // Reconciliar desde el servidor SOLO si no estás editando este bloque.
+    if (!dirtyRef.current) setLocal(block);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [block]);
+
+  const flush = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (pendingRef.current) {
+      onUpdateRef.current(pendingRef.current);
+      pendingRef.current = null;
+      dirtyRef.current = false;
+    }
+  }, []);
+
+  const queue = useCallback((fields) => {
+    setLocal(prev => ({ ...prev, ...fields }));
+    dirtyRef.current = true;
+    pendingRef.current = { ...(pendingRef.current || {}), ...fields };
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(flush, 600);
+  }, [flush]);
+
+  useEffect(() => flush, [flush]); // guardar lo pendiente al desmontar
+
+  return { local, queue, flush };
+}
+
 // ── Card del Canvas: título editable + body editable + status + accent strip ──
 function CanvasCard({ block, onUpdate, onDelete }) {
-  const [local, setLocal] = useState(block);
-  const [debounce, setDebounce] = useState(null);
-  useEffect(() => setLocal(block), [block.id, block.updated_at]);
-
-  const queue = (fields) => {
-    setLocal(prev => ({ ...prev, ...fields }));
-    if (debounce) clearTimeout(debounce);
-    setDebounce(setTimeout(() => onUpdate(fields), 600));
-  };
+  const { local, queue, flush } = useAutosave(block, onUpdate);
 
   const accent = ACCENT_MAP[block.accent] || 'var(--color-accent)';
   const tint = ACCENT_TINT[block.accent] || 'var(--color-accent-tint)';
@@ -215,6 +269,7 @@ function CanvasCard({ block, onUpdate, onDelete }) {
           <input
             value={local.title || ''}
             onChange={e => queue({ title: e.target.value })}
+            onBlur={flush}
             className="font-display text-[14px] font-semibold tracking-tighter text-[var(--color-ink)] bg-transparent focus:outline-none flex-1 min-w-0"
           />
           <button onClick={onDelete} className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--color-ink-4)] hover:text-[var(--color-rose)] flex-shrink-0" title="Eliminar bloque">
@@ -224,11 +279,12 @@ function CanvasCard({ block, onUpdate, onDelete }) {
         <Textarea
           value={local.body || ''}
           onChange={e => queue({ body: e.target.value })}
+          onBlur={flush}
           placeholder="Escribí acá…"
           rows={3}
           className="text-[13px] border-0 px-0 py-0 focus:outline-none bg-transparent leading-relaxed resize-none mb-2"
         />
-        <StatusChips value={local.status} onChange={v => queue({ status: v })} />
+        <StatusChips value={local.status} onChange={v => { queue({ status: v }); flush(); }} />
       </div>
     </div>
   );
@@ -236,15 +292,7 @@ function CanvasCard({ block, onUpdate, onDelete }) {
 
 // ── Card de pregunta: prompt fijo + respuesta editable + status + crítica ──
 function QuestionCard({ block, onUpdate, onDelete }) {
-  const [local, setLocal] = useState(block);
-  const [debounce, setDebounce] = useState(null);
-  useEffect(() => setLocal(block), [block.id, block.updated_at]);
-
-  const queue = (fields) => {
-    setLocal(prev => ({ ...prev, ...fields }));
-    if (debounce) clearTimeout(debounce);
-    setDebounce(setTimeout(() => onUpdate(fields), 600));
-  };
+  const { local, queue, flush } = useAutosave(block, onUpdate);
 
   const answered = (local.body || '').trim().length > 0;
 
@@ -263,6 +311,7 @@ function QuestionCard({ block, onUpdate, onDelete }) {
             <input
               value={local.title || ''}
               onChange={e => queue({ title: e.target.value })}
+              onBlur={flush}
               className="font-medium text-[13.5px] text-[var(--color-ink)] bg-transparent focus:outline-none flex-1 min-w-0 leading-snug"
             />
           </div>
@@ -273,6 +322,7 @@ function QuestionCard({ block, onUpdate, onDelete }) {
         <Textarea
           value={local.body || ''}
           onChange={e => queue({ body: e.target.value })}
+          onBlur={flush}
           placeholder="Escribí acá la respuesta del equipo…"
           rows={2}
           className={cn(
@@ -280,7 +330,7 @@ function QuestionCard({ block, onUpdate, onDelete }) {
             answered ? 'bg-[var(--color-paper-2)]' : 'bg-[var(--color-amber-tint)]/40',
           )}
         />
-        <StatusChips value={local.status} onChange={v => queue({ status: v })} />
+        <StatusChips value={local.status} onChange={v => { queue({ status: v }); flush(); }} />
       </div>
     </div>
   );
