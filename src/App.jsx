@@ -1,39 +1,62 @@
-/* Hallmark · macrostructure: Workbench · theme: Cobalt-tuned
- * pre-emit critique: P5 H5 E5 S5 R5 V4
- * App shell — sin login ni picker de entrada. Persona en el header (default = primero).
- */
-
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { LogOut } from 'lucide-react';
 import { ToastContainer } from './components/ui.jsx';
 import { cn } from './lib/cn';
 import RoadmapPage from './pages/Roadmap.jsx';
 import TeamPage from './pages/Team.jsx';
 import BusinessPlanPage from './pages/BusinessPlan.jsx';
-import { listMembers } from './lib/api';
-
-const ME_KEY = 'dfa:roadmap:me';
+import {
+  clearSession,
+  getStoredUser,
+  getToken,
+  listMembers,
+  login,
+  saveSession,
+} from './lib/api';
 
 export default function App() {
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState('roadmap');
+  const [session, setSession] = useState(() => (
+    getToken() ? { user: getStoredUser(), checking: true } : null
+  ));
 
-  const { data: members = [] } = useQuery({
-    queryKey: ['internal-members'],
-    queryFn: listMembers,
-  });
-
-  // Auto-set silencioso: la app no muestra UI de identidad, pero seguimos sincronizando
-  // un email "actual" al localStorage para que el axios interceptor lo mande en el header
-  // (audit en backend: quién comentó / quién eliminó). Default = primer miembro.
   useEffect(() => {
-    if (members.length === 0) return;
-    const storedId = localStorage.getItem(ME_KEY);
-    const me = members.find(m => m.id === storedId) || members[0];
-    if (me) {
-      localStorage.setItem(ME_KEY, me.id);
-      localStorage.setItem('dfa:roadmap:email', me.email || '');
-    }
-  }, [members]);
+    const expire = () => {
+      queryClient.clear();
+      setSession(null);
+    };
+    window.addEventListener('roadmap:unauthorized', expire);
+    return () => window.removeEventListener('roadmap:unauthorized', expire);
+  }, [queryClient]);
+
+  useEffect(() => {
+    if (!session?.checking) return;
+    let active = true;
+    listMembers()
+      .then(() => active && setSession(current => ({ ...current, checking: false })))
+      .catch(() => {
+        if (!active) return;
+        clearSession();
+        queryClient.clear();
+        setSession(null);
+      });
+    return () => { active = false; };
+  }, [queryClient, session?.checking]);
+
+  const handleLogout = () => {
+    clearSession();
+    queryClient.clear();
+    setSession(null);
+  };
+
+  if (!session) {
+    return <LoginScreen onAuthenticated={setSession} />;
+  }
+  if (session.checking) {
+    return <div className="min-h-screen grid place-items-center text-sm text-[var(--color-ink-3)]">Validando acceso…</div>;
+  }
 
   return (
     <div className="min-h-screen">
@@ -42,10 +65,7 @@ export default function App() {
         <div className="max-w-[1800px] mx-auto px-6 py-3 flex items-center justify-between gap-6">
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-2.5">
-              <span className="relative w-7 h-7 rounded-md bg-gradient-to-br from-[var(--color-ink)] to-[oklch(28%_0.04_265)] text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[12px] shadow-[var(--shadow-sm),0_0_0_1px_oklch(100%_0_0_/_0.08)_inset]">
-                D
-                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] ring-2 ring-[var(--color-paper)]" />
-              </span>
+              <span className="w-7 h-7 rounded-md bg-gradient-to-br from-[var(--color-ink)] to-[oklch(28%_0.04_265)] text-[var(--color-paper)] flex items-center justify-center font-display font-bold text-[12px] shadow-[var(--shadow-sm)]">D</span>
               <div className="flex items-baseline gap-2">
                 <span className="font-display text-[15px] font-semibold tracking-tighter text-[var(--color-ink)]">Demand Flow AI</span>
                 <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-3)]">Roadmap</span>
@@ -59,8 +79,16 @@ export default function App() {
             </nav>
           </div>
 
-          {/* Persona switcher removido del header — la app no necesita identificación visible.
-              Si quisieras volver a poner el indicador "Soy [persona]", el state meId sigue activo. */}
+          <div className="flex items-center gap-3 text-xs text-[var(--color-ink-3)]">
+            <span className="hidden sm:inline">{session.user?.email}</span>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 hover:bg-[var(--color-paper-2)] hover:text-[var(--color-ink)]"
+            >
+              <LogOut size={14} /> Cerrar sesión
+            </button>
+          </div>
         </div>
       </header>
 
@@ -75,9 +103,84 @@ export default function App() {
   );
 }
 
+function LoginScreen({ onAuthenticated }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      const next = await login(email.trim(), password);
+      saveSession(next);
+      await listMembers();
+      onAuthenticated(next);
+    } catch (requestError) {
+      clearSession();
+      const status = requestError.response?.status;
+      setError(status === 403
+        ? 'Tu cuenta no tiene acceso al roadmap interno.'
+        : requestError.response?.data?.error || 'No fue posible iniciar sesión.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen grid place-items-center bg-[var(--color-paper-2)] px-4">
+      <form onSubmit={submit} className="w-full max-w-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-paper)] p-7 shadow-[var(--shadow-md)]">
+        <div className="mb-6">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-3)]">Demand Flow AI</p>
+          <h1 className="mt-1 font-display text-xl font-semibold text-[var(--color-ink)]">Roadmap interno</h1>
+          <p className="mt-2 text-sm text-[var(--color-ink-3)]">Inicia sesión con una cuenta autorizada.</p>
+        </div>
+
+        <label className="block text-xs font-medium text-[var(--color-ink-2)]">
+          Correo
+          <input
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={event => setEmail(event.target.value)}
+            className="mt-1.5 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+          />
+        </label>
+
+        <label className="mt-4 block text-xs font-medium text-[var(--color-ink-2)]">
+          Contraseña
+          <input
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={event => setPassword(event.target.value)}
+            className="mt-1.5 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+          />
+        </label>
+
+        {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="mt-6 w-full rounded-md bg-[var(--color-ink)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
+        >
+          {submitting ? 'Validando…' : 'Iniciar sesión'}
+        </button>
+      </form>
+      <ToastContainer />
+    </div>
+  );
+}
+
 function TabLink({ children, active, onClick }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         'relative px-1 py-3.5 text-[13px] font-medium transition-colors duration-[var(--dur-fast)]',
@@ -85,12 +188,10 @@ function TabLink({ children, active, onClick }) {
       )}
     >
       <span className="px-3">{children}</span>
-      <span
-        className={cn(
-          'absolute left-3 right-3 -bottom-px h-px transition-all duration-[var(--dur-base)] ease-[var(--ease-out)]',
-          active ? 'bg-[var(--color-ink)]' : 'bg-transparent',
-        )}
-      />
+      <span className={cn(
+        'absolute left-3 right-3 -bottom-px h-px transition-all duration-[var(--dur-base)] ease-[var(--ease-out)]',
+        active ? 'bg-[var(--color-ink)]' : 'bg-transparent',
+      )} />
     </button>
   );
 }
