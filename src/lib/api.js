@@ -3,46 +3,10 @@ import axios from 'axios';
 const PROD_BACKEND = 'https://supply-app-backend-production.up.railway.app';
 const BASE_URL = import.meta.env.VITE_BACKEND_URL
   || (import.meta.env.PROD ? PROD_BACKEND : 'http://localhost:3001');
-const TOKEN_KEY = 'dfa:roadmap:token';
-const USER_KEY = 'dfa:roadmap:user';
 
 const api = axios.create({ baseURL: BASE_URL });
 
-export const getToken = () => localStorage.getItem(TOKEN_KEY);
-export const getStoredUser = () => {
-  try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); }
-  catch { return null; }
-};
-export const saveSession = ({ token, user }) => {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-};
-export const clearSession = () => {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-};
-
-api.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-api.interceptors.response.use(
-  response => response,
-  error => {
-    if (error.response?.status === 401 && getToken()) {
-      clearSession();
-      window.dispatchEvent(new CustomEvent('roadmap:unauthorized'));
-    }
-    return Promise.reject(error);
-  },
-);
-
 const BASE = '/api/internal-roadmap';
-
-export const login = (email, password) =>
-  api.post('/api/auth/login', { email, password }).then(r => r.data);
 
 export const listMembers = () => api.get(`${BASE}/members`).then(r => r.data);
 export const upsertMember = member => api.post(`${BASE}/members`, member).then(r => r.data);

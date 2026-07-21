@@ -1,7 +1,7 @@
 # DFA Roadmap Interno
 
 App standalone para que el equipo fundador de DFA planee y gestione el path-to-launch.
-**Uso solo interno** — gateada por allowlist de emails en el backend.
+**Uso del equipo** — accesible directamente mediante su enlace, sin cuenta ni contraseña.
 
 ## Características
 
@@ -58,17 +58,12 @@ const allowedOrigins = [
 
 ## Acceso
 
-Al entrar, te pide tu email. Tu email debe estar en la allowlist del backend:
-
-```bash
-# .env del supply-app-backend
-INTERNAL_ADMIN_EMAILS=email1@ejemplo.com,email2@ejemplo.com,...
-```
-
-Sin la env var, el default solo acepta `lfgg2000@gmail.com`.
+No requiere cuenta ni correo. Quien tenga el enlace puede consultar y modificar
+el tablero, el plan, el equipo y los comentarios. Las demás APIs de Demand Flow
+AI conservan su autenticación habitual.
 
 ## Seguridad
 
-⚠️ **Auth simple basada en header**. El header `X-Internal-Admin-Email` se puede
-spoofear desde devtools. La barrera real es la allowlist del backend. Para uso
-interno del equipo fundador solamente — no exponer este URL públicamente.
+El enlace debe compartirse únicamente con el equipo autorizado. El Roadmap no
+contiene una barrera adicional de autenticación y todas sus acciones están
+disponibles para quien conozca la URL.

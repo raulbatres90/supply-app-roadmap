@@ -1,62 +1,12 @@
-import { useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { LogOut } from 'lucide-react';
+import { useState } from 'react';
 import { ToastContainer } from './components/ui.jsx';
 import { cn } from './lib/cn';
 import RoadmapPage from './pages/Roadmap.jsx';
 import TeamPage from './pages/Team.jsx';
 import BusinessPlanPage from './pages/BusinessPlan.jsx';
-import {
-  clearSession,
-  getStoredUser,
-  getToken,
-  listMembers,
-  login,
-  saveSession,
-} from './lib/api';
 
 export default function App() {
-  const queryClient = useQueryClient();
   const [tab, setTab] = useState('roadmap');
-  const [session, setSession] = useState(() => (
-    getToken() ? { user: getStoredUser(), checking: true } : null
-  ));
-
-  useEffect(() => {
-    const expire = () => {
-      queryClient.clear();
-      setSession(null);
-    };
-    window.addEventListener('roadmap:unauthorized', expire);
-    return () => window.removeEventListener('roadmap:unauthorized', expire);
-  }, [queryClient]);
-
-  useEffect(() => {
-    if (!session?.checking) return;
-    let active = true;
-    listMembers()
-      .then(() => active && setSession(current => ({ ...current, checking: false })))
-      .catch(() => {
-        if (!active) return;
-        clearSession();
-        queryClient.clear();
-        setSession(null);
-      });
-    return () => { active = false; };
-  }, [queryClient, session?.checking]);
-
-  const handleLogout = () => {
-    clearSession();
-    queryClient.clear();
-    setSession(null);
-  };
-
-  if (!session) {
-    return <LoginScreen onAuthenticated={setSession} />;
-  }
-  if (session.checking) {
-    return <div className="min-h-screen grid place-items-center text-sm text-[var(--color-ink-3)]">Validando acceso…</div>;
-  }
 
   return (
     <div className="min-h-screen">
@@ -79,16 +29,7 @@ export default function App() {
             </nav>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-[var(--color-ink-3)]">
-            <span className="hidden sm:inline">{session.user?.email}</span>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 hover:bg-[var(--color-paper-2)] hover:text-[var(--color-ink)]"
-            >
-              <LogOut size={14} /> Cerrar sesión
-            </button>
-          </div>
+          <span className="text-xs text-[var(--color-ink-3)]">Acceso por enlace</span>
         </div>
       </header>
 
@@ -98,80 +39,6 @@ export default function App() {
         {tab === 'team' && <TeamPage />}
       </main>
 
-      <ToastContainer />
-    </div>
-  );
-}
-
-function LoginScreen({ onAuthenticated }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async (event) => {
-    event.preventDefault();
-    setError('');
-    setSubmitting(true);
-    try {
-      const next = await login(email.trim(), password);
-      saveSession(next);
-      await listMembers();
-      onAuthenticated(next);
-    } catch (requestError) {
-      clearSession();
-      const status = requestError.response?.status;
-      setError(status === 403
-        ? 'Tu cuenta no tiene acceso al roadmap interno.'
-        : requestError.response?.data?.error || 'No fue posible iniciar sesión.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen grid place-items-center bg-[var(--color-paper-2)] px-4">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-paper)] p-7 shadow-[var(--shadow-md)]">
-        <div className="mb-6">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-3)]">Demand Flow AI</p>
-          <h1 className="mt-1 font-display text-xl font-semibold text-[var(--color-ink)]">Roadmap interno</h1>
-          <p className="mt-2 text-sm text-[var(--color-ink-3)]">Inicia sesión con una cuenta autorizada.</p>
-        </div>
-
-        <label className="block text-xs font-medium text-[var(--color-ink-2)]">
-          Correo
-          <input
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={event => setEmail(event.target.value)}
-            className="mt-1.5 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-          />
-        </label>
-
-        <label className="mt-4 block text-xs font-medium text-[var(--color-ink-2)]">
-          Contraseña
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={event => setPassword(event.target.value)}
-            className="mt-1.5 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-          />
-        </label>
-
-        {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="mt-6 w-full rounded-md bg-[var(--color-ink)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
-        >
-          {submitting ? 'Validando…' : 'Iniciar sesión'}
-        </button>
-      </form>
       <ToastContainer />
     </div>
   );
