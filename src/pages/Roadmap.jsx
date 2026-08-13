@@ -7,7 +7,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, Trash2, Save, MessageSquare, X,
-  GanttChartSquare, Table as TableIcon, ChevronDown, ChevronRight,
+  GanttChartSquare, KanbanSquare, ChevronDown, ChevronRight,
   Trash, RotateCcw, ArrowLeft,
 } from 'lucide-react';
 import { Crosshair } from 'lucide-react';
@@ -282,7 +282,7 @@ export default function RoadmapPage() {
           {/* View switch */}
           <div className="flex items-center gap-px border border-[var(--color-border)] rounded-md overflow-hidden">
             <button onClick={() => setView('table')} className={cn('px-2.5 h-8 text-[11px] font-medium flex items-center gap-1 transition-colors', view === 'table' ? 'bg-[var(--color-ink)] text-[var(--color-paper)]' : 'text-[var(--color-ink-2)] hover:bg-[var(--color-paper-3)]')}>
-              <TableIcon className="w-3 h-3" /> Tabla
+              <KanbanSquare className="w-3 h-3" /> Tablero
             </button>
             <div className="w-px h-4 bg-[var(--color-border)]" />
             <button onClick={() => setView('gantt')} className={cn('px-2.5 h-8 text-[11px] font-medium flex items-center gap-1 transition-colors', view === 'gantt' ? 'bg-[var(--color-ink)] text-[var(--color-paper)]' : 'text-[var(--color-ink-2)] hover:bg-[var(--color-paper-3)]')}>
@@ -319,7 +319,12 @@ export default function RoadmapPage() {
           {isLoading ? (
             <div className="py-24 text-center font-mono text-[11px] uppercase tracking-widest text-[var(--color-ink-4)]">Cargando…</div>
           ) : view === 'table' ? (
-            <TableView tasks={filteredTasks} selectedId={selectedTaskId} onSelect={setSelectedTaskId} collapsedPhases={collapsedPhases} togglePhase={togglePhase} />
+            <BoardView
+              tasks={filteredTasks}
+              selectedId={selectedTaskId}
+              onSelect={setSelectedTaskId}
+              onStatusChange={(id, status) => updateMutation.mutate({ id, fields: { status } })}
+            />
           ) : (
             <GanttView tasks={filteredTasks} selectedId={selectedTaskId} onSelect={setSelectedTaskId} collapsedPhases={collapsedPhases} togglePhase={togglePhase} />
           )}
@@ -402,6 +407,147 @@ function ProgressCard({ label, value }) {
 }
 
 // ─── Table view ─────────────────────────────────────────────────────────────
+// ─── Board (Kanban) view — columnas por estado, horizontal ──────────────────
+// Reemplaza la tabla vertical: una columna por status (STATUS_OPTIONS) y cada
+// tarea es una tarjeta. Arrastrar una tarjeta a otra columna cambia su status
+// (drag & drop nativo, sin dependencias). Click en la tarjeta abre el detalle.
+function BoardView({ tasks, selectedId, onSelect, onStatusChange }) {
+  const byStatus = useMemo(() => {
+    const m = new Map(STATUS_OPTIONS.map(s => [s.value, []]));
+    for (const t of tasks) {
+      (m.get(t.status) || m.get('pending')).push(t);
+    }
+    return m;
+  }, [tasks]);
+
+  const [dragId, setDragId] = useState(null);
+  const [overCol, setOverCol] = useState(null);
+
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-4 items-start">
+      {STATUS_OPTIONS.map(col => {
+        const items = byStatus.get(col.value) || [];
+        const isOver = overCol === col.value;
+        return (
+          <div
+            key={col.value}
+            onDragOver={(e) => { e.preventDefault(); if (overCol !== col.value) setOverCol(col.value); }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOverCol(c => (c === col.value ? null : c)); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setOverCol(null);
+              if (dragId != null) {
+                const task = tasks.find(t => t.id === dragId);
+                if (task && task.status !== col.value) onStatusChange(dragId, col.value);
+              }
+              setDragId(null);
+            }}
+            className={cn(
+              'flex-shrink-0 w-[280px] rounded-xl border transition-colors duration-[var(--dur-fast)]',
+              isOver ? 'border-[var(--color-accent)] bg-[var(--color-accent-tint)]' : 'border-[var(--color-border)] bg-[var(--color-paper-2)]',
+            )}
+          >
+            {/* Column header */}
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--color-border)]">
+              <span className="inline-flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: col.dot }} />
+                <span className="font-display text-[13px] font-semibold tracking-tighter text-[var(--color-ink)] truncate">{col.label}</span>
+              </span>
+              <span className="font-mono text-[10px] tabular text-[var(--color-ink-3)] bg-[var(--color-paper-3)] px-1.5 py-px rounded flex-shrink-0">{items.length}</span>
+            </div>
+
+            {/* Cards */}
+            <div className="p-2 space-y-2 min-h-[72px] max-h-[calc(100vh-300px)] overflow-y-auto">
+              {items.length === 0 ? (
+                <div className="py-8 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-4)]">
+                  {isOver ? 'Soltá aquí' : '—'}
+                </div>
+              ) : (
+                items.map(t => (
+                  <BoardCard
+                    key={t.id}
+                    task={t}
+                    isSelected={t.id === selectedId}
+                    onSelect={() => onSelect(t.id)}
+                    onDragStart={() => setDragId(t.id)}
+                    onDragEnd={() => { setDragId(null); setOverCol(null); }}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function BoardCard({ task, isSelected, onSelect, onDragStart, onDragEnd }) {
+  const priority = PRIORITY_OPTIONS.find(p => p.value === task.priority) || PRIORITY_OPTIONS[1];
+  const pc = phaseColor(task.phase);
+  const hasMeta = task.subtask_count > 0 || task.comment_count > 0 || task.depends_on?.length > 0 || task.tags?.length > 0;
+  return (
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart(); }}
+      onDragEnd={onDragEnd}
+      onClick={onSelect}
+      className={cn(
+        'rounded-lg border bg-[var(--color-paper)] p-2.5 cursor-pointer transition-all duration-[var(--dur-fast)] hover:shadow-[var(--shadow-card)] active:cursor-grabbing',
+        isSelected ? 'border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]' : 'border-[var(--color-border-2)] hover:border-[var(--color-border)]',
+      )}
+      style={{ borderLeft: `3px solid ${pc.accent}` }}
+    >
+      {/* Phase chip + priority */}
+      <div className="flex items-center gap-2 mb-1.5">
+        {task.phase && (
+          <span className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-px rounded truncate" style={{ background: pc.tint, color: pc.accent }}>
+            {task.phase}
+          </span>
+        )}
+        <span className="text-[10px] font-semibold ml-auto flex-shrink-0" style={{ color: priority.fg }}>{priority.label}</span>
+      </div>
+
+      {/* Title */}
+      <div className="font-medium text-[13px] text-[var(--color-ink)] leading-snug">{task.title}</div>
+
+      {/* Meta line */}
+      {hasMeta && (
+        <div className="flex items-center gap-2.5 mt-1.5 text-[10px] font-mono text-[var(--color-ink-4)] flex-wrap">
+          {task.subtask_count > 0 && <span>{task.subtask_count} sub</span>}
+          {task.comment_count > 0 && (
+            <span className="flex items-center gap-0.5"><MessageSquare className="w-2.5 h-2.5" />{task.comment_count}</span>
+          )}
+          {task.depends_on?.length > 0 && <span>↶ {task.depends_on.length} deps</span>}
+          {task.tags?.length > 0 && task.tags.map(tag => (
+            <span key={tag} className="px-1 py-px rounded bg-[var(--color-paper-3)] text-[var(--color-ink-3)] normal-case">{tag}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Footer: assignee + fin + horas */}
+      <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-[var(--color-border-2)]">
+        <div className="min-w-0">
+          {task.assignees?.length === 1 ? (
+            <span className="inline-flex items-center gap-1.5 min-w-0">
+              <Avatar name={task.assignees[0].display_name} color={task.assignees[0].color} size={5} />
+              <span className="text-[11px] text-[var(--color-ink-2)] truncate max-w-[92px]">{task.assignees[0].display_name.split(' ')[0]}</span>
+            </span>
+          ) : task.assignees?.length > 1 ? (
+            <AvatarStack assignees={task.assignees} max={3} size={5} />
+          ) : (
+            <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-4)]">—</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {task.end_date && <DateCell value={task.end_date} />}
+          {task.estimated_hours ? <span className="font-mono text-[10px] tabular text-[var(--color-ink-3)]">{task.estimated_hours}h</span> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TableView({ tasks, selectedId, onSelect, collapsedPhases, togglePhase }) {
   const groups = useMemo(() => groupByPhase(tasks), [tasks]);
   return (
