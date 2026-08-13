@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Save, X, Mail, User as UserIcon, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, X, User as UserIcon } from 'lucide-react';
 import { Button, Input, Card, toast } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import * as api from '@/lib/api';
@@ -60,25 +60,14 @@ export default function TeamPage() {
           <div>
             <h1 className="font-display text-[32px] leading-tight tracking-tighter text-[var(--color-ink)]">Equipo</h1>
             <p className="text-[13px] text-[var(--color-ink-2)] mt-1 max-w-xl">
-              Personas que pueden ser asignadas a tareas del roadmap. La autorización de acceso a esta app se gestiona aparte.
+              Personas que pueden ser asignadas a tareas del roadmap. Se identifican por nombre.
             </p>
           </div>
-          <Button variant="accent" size="md" onClick={() => setEditing({ email: '', display_name: '', color: PRESET_COLORS[0] })}>
+          <Button variant="accent" size="md" onClick={() => setEditing({ display_name: '', color: PRESET_COLORS[0] })}>
             <Plus className="w-3.5 h-3.5" /> Agregar persona
           </Button>
         </div>
       </header>
-
-      {/* Caveat strip — editorial, not a "warning box" */}
-      <div className="mb-6 flex items-start gap-3 px-4 py-3 border-l-2 border-[var(--color-amber)] bg-[var(--color-amber-soft)]">
-        <AlertTriangle className="w-4 h-4 text-[var(--color-amber)] flex-shrink-0 mt-0.5" />
-        <div className="text-[12px] text-[var(--color-ink)] leading-relaxed">
-          <strong className="font-semibold">Agregar a alguien aquí no le da acceso al login.</strong>{' '}
-          Su email debe estar también en{' '}
-          <code className="font-mono text-[11px] bg-[var(--color-paper)] border border-[var(--color-border)] px-1 py-px rounded">INTERNAL_ADMIN_EMAILS</code>{' '}
-          del backend (env var). Editá el <code className="font-mono text-[11px] bg-[var(--color-paper)] border border-[var(--color-border)] px-1 py-px rounded">.env</code> del backend y reiniciá.
-        </div>
-      </div>
 
       {/* Members table */}
       <Card className="overflow-hidden">
@@ -87,7 +76,7 @@ export default function TeamPage() {
         ) : members.length === 0 ? (
           <div className="py-16 text-center">
             <p className="font-mono text-[11px] uppercase tracking-widest text-[var(--color-ink-4)] mb-4">Sin personas todavía</p>
-            <Button variant="outline" size="sm" onClick={() => setEditing({ email: '', display_name: '', color: PRESET_COLORS[0] })}>
+            <Button variant="outline" size="sm" onClick={() => setEditing({ display_name: '', color: PRESET_COLORS[0] })}>
               <Plus className="w-3.5 h-3.5" /> Agregar la primera
             </Button>
           </div>
@@ -96,7 +85,6 @@ export default function TeamPage() {
             <thead className="bg-[var(--color-paper-2)] border-b border-[var(--color-border)]">
               <tr>
                 <th className="text-left px-4 py-2.5 font-mono text-[10px] uppercase tracking-widest font-medium text-[var(--color-ink-3)]">Persona</th>
-                <th className="text-left px-4 py-2.5 font-mono text-[10px] uppercase tracking-widest font-medium text-[var(--color-ink-3)]">Correo</th>
                 <th className="text-left px-4 py-2.5 font-mono text-[10px] uppercase tracking-widest font-medium text-[var(--color-ink-3)] w-20">Color</th>
                 <th className="text-right px-4 py-2.5 font-mono text-[10px] uppercase tracking-widest font-medium text-[var(--color-ink-3)] w-32">Acciones</th>
               </tr>
@@ -115,7 +103,6 @@ export default function TeamPage() {
                       <span className="font-medium text-[13px] text-[var(--color-ink)]">{m.display_name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5 font-mono text-[11px] text-[var(--color-ink-2)]">{m.email}</td>
                   <td className="px-4 py-3.5">
                     <span className="inline-block w-4 h-4 rounded-sm border border-[var(--color-border)]" style={{ background: m.color }} />
                   </td>
@@ -192,25 +179,6 @@ function MemberEditModal({ member, onClose, onSave, saving }) {
           </div>
 
           <div>
-            <label className="font-mono text-[10px] uppercase tracking-widest font-medium text-[var(--color-ink-3)] flex items-center gap-1.5">
-              <Mail className="w-3 h-3" /> Correo
-            </label>
-            <Input
-              type="email"
-              value={local.email}
-              onChange={e => setLocal({ ...local, email: e.target.value.toLowerCase().trim() })}
-              placeholder="email@ejemplo.com"
-              required
-              className="mt-1.5 h-10 font-mono text-[12px]"
-            />
-            <p className="text-[11px] text-[var(--color-ink-3)] mt-1.5 leading-relaxed">
-              Debe coincidir con el correo de login. Agregalo también a{' '}
-              <code className="font-mono text-[10px] bg-[var(--color-paper-3)] px-1 rounded">INTERNAL_ADMIN_EMAILS</code>{' '}
-              del backend.
-            </p>
-          </div>
-
-          <div>
             <label className="font-mono text-[10px] uppercase tracking-widest font-medium text-[var(--color-ink-3)] block mb-2">
               Color de avatar
             </label>
@@ -245,7 +213,6 @@ function MemberEditModal({ member, onClose, onSave, saving }) {
                 </span>
                 <div className="leading-tight">
                   <p className="font-medium text-[13px] text-[var(--color-ink)]">{local.display_name}</p>
-                  {local.email && <p className="font-mono text-[11px] text-[var(--color-ink-3)]">{local.email}</p>}
                 </div>
               </div>
             </div>
@@ -253,7 +220,7 @@ function MemberEditModal({ member, onClose, onSave, saving }) {
 
           <div className="flex items-center justify-end gap-2 pt-4 border-t border-[var(--color-border-2)]">
             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-            <Button type="submit" variant="primary" disabled={saving || !local.email || !local.display_name}>
+            <Button type="submit" variant="primary" disabled={saving || !local.display_name}>
               {saving ? 'Guardando…' : (isNew ? 'Agregar persona' : 'Guardar cambios')}
             </Button>
           </div>
