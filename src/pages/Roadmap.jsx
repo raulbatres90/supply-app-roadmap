@@ -786,13 +786,6 @@ function GanttInner({ tasks, selectedId, onSelect, collapsedPhases, togglePhase,
   const scheduledGroups = useMemo(() => groupByPhase(scheduled), [scheduled]);
   const unscheduledGroups = useMemo(() => groupByPhase(unscheduled), [unscheduled]);
 
-  // Empty state — cuando no hay NINGUNA tarea con fechas asignadas, el Gantt no tiene
-  // mucho que mostrar más allá del Sin Programar. Renderizamos un hero state elegante
-  // que invita al usuario a asignar fechas para activar el timeline.
-  if (scheduled.length === 0 && tasks.length > 0) {
-    return <GanttEmptyState totalTasks={tasks.length} unscheduledGroups={unscheduledGroups} selectedId={selectedId} onSelect={onSelect} collapsedPhases={collapsedPhases} togglePhase={togglePhase} />;
-  }
-
   const dateRange = useMemo(() => {
     if (scheduled.length === 0) {
       const today = new window.Date();
@@ -881,6 +874,15 @@ function GanttInner({ tasks, selectedId, onSelect, collapsedPhases, togglePhase,
     const fmt = (d) => d.toLocaleDateString('es-MX', { month: 'short', year: '2-digit' });
     return `${fmt(dateRange.start)} — ${fmt(dateRange.end)}`;
   }, [dateRange]);
+
+  // Empty state — cuando no hay NINGUNA tarea con fechas asignadas. DEBE ir aquí,
+  // después de TODOS los hooks (regla de React: ningún return antes de un hook),
+  // si no al asignar/quitar una fecha cambia cuántos hooks corren y truena con
+  // "Rendered fewer hooks than expected". Los useMemo de arriba ya manejan
+  // scheduled.length === 0 sin romperse.
+  if (scheduled.length === 0 && tasks.length > 0) {
+    return <GanttEmptyState totalTasks={tasks.length} unscheduledGroups={unscheduledGroups} selectedId={selectedId} onSelect={onSelect} collapsedPhases={collapsedPhases} togglePhase={togglePhase} />;
+  }
 
   return (
     <div className="bg-[var(--color-paper)] border border-[var(--color-border)] rounded-xl overflow-hidden shadow-[var(--shadow-card)]">
