@@ -1707,14 +1707,24 @@ function TaskDetailPanel({ task, members, onClose, onUpdate, onDelete, onRestore
   const [local, setLocal] = useState(task);
   const [debounce, setDebounce] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
+  // Acumulador de cambios pendientes: si el usuario toca varios campos dentro de
+  // la ventana del debounce, TODOS se guardan juntos. Antes solo se enviaba el
+  // último (el resto se perdía → parecía que "no dejaba guardar").
+  const pendingRef = React.useRef({});
 
-  useEffect(() => { setLocal(task); setHasChanges(false); }, [task.id, task.updated_at]);
+  useEffect(() => { setLocal(task); setHasChanges(false); pendingRef.current = {}; }, [task.id, task.updated_at]);
 
   const queueSave = (fields) => {
     setLocal(prev => ({ ...prev, ...fields }));
+    pendingRef.current = { ...pendingRef.current, ...fields };
     setHasChanges(true);
     if (debounce) clearTimeout(debounce);
-    const id = setTimeout(() => { onUpdate(fields); setHasChanges(false); }, 600);
+    const id = setTimeout(() => {
+      const toSave = pendingRef.current;
+      pendingRef.current = {};
+      if (Object.keys(toSave).length > 0) onUpdate(toSave);
+      setHasChanges(false);
+    }, 600);
     setDebounce(id);
   };
 
