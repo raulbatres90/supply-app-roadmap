@@ -323,7 +323,9 @@ export default function RoadmapPage() {
               tasks={filteredTasks}
               selectedId={selectedTaskId}
               onSelect={setSelectedTaskId}
-              onStatusChange={(id, status) => updateMutation.mutate({ id, fields: { status } })}
+              collapsedPhases={collapsedPhases}
+              togglePhase={togglePhase}
+              onCardMove={(id, fields) => updateMutation.mutate({ id, fields })}
             />
           ) : (
             <GanttView tasks={filteredTasks} selectedId={selectedTaskId} onSelect={setSelectedTaskId} collapsedPhases={collapsedPhases} togglePhase={togglePhase} />
@@ -407,77 +409,128 @@ function ProgressCard({ label, value }) {
 }
 
 // ─── Table view ─────────────────────────────────────────────────────────────
-// ─── Board (Kanban) view — columnas por estado, horizontal ──────────────────
-// Reemplaza la tabla vertical: una columna por status (STATUS_OPTIONS) y cada
-// tarea es una tarjeta. Arrastrar una tarjeta a otra columna cambia su status
-// (drag & drop nativo, sin dependencias). Click en la tarjeta abre el detalle.
-function BoardView({ tasks, selectedId, onSelect, onStatusChange }) {
-  const byStatus = useMemo(() => {
-    const m = new Map(STATUS_OPTIONS.map(s => [s.value, []]));
+// ─── Board (Kanban) view — carpetas de fase (swimlanes) × columnas de estado ──
+// Cada FASE es una carpeta plegable (Pre-launch, Billing, …, Soporte, Launch).
+// Al expandirla, sus tareas se reparten en columnas por ESTADO. Arrastrar una
+// tarjeta a una celda (fase, estado) cambia ambos. Drag & drop nativo, sin deps.
+// Soporte y Launch siempre aparecen como carpetas, aunque estén vacías.
+const ALWAYS_PHASES = ['Soporte', 'Launch'];
+const NO_PHASE = '(Sin fase)';
+
+function BoardView({ tasks, selectedId, onSelect, collapsedPhases, togglePhase, onCardMove }) {
+  const phaseList = useMemo(() => {
+    const map = new Map();
+    for (const p of ALWAYS_PHASES) map.set(p, []); // carpetas fijas, aunque vacías
     for (const t of tasks) {
-      (m.get(t.status) || m.get('pending')).push(t);
+      const k = t.phase || NO_PHASE;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(t);
     }
-    return m;
+    const order = Object.keys(PHASE_COLOR);
+    const rank = (p) => {
+      const i = order.indexOf(p);
+      if (i !== -1) return i;
+      return p === NO_PHASE ? 999 : 500;
+    };
+    return [...map.keys()].sort((a, b) => rank(a) - rank(b)).map(phase => ({ phase, tasks: map.get(phase) }));
   }, [tasks]);
 
   const [dragId, setDragId] = useState(null);
-  const [overCol, setOverCol] = useState(null);
+  const [overCell, setOverCell] = useState(null); // `${phase}|${status}`
+
+  const colTemplate = { gridTemplateColumns: `repeat(${STATUS_OPTIONS.length}, minmax(232px, 1fr))` };
+  const minWidth = STATUS_OPTIONS.length * 244;
+
+  const handleDrop = (phase, status) => {
+    if (dragId == null) return;
+    const task = tasks.find(t => t.id === dragId);
+    setOverCell(null);
+    setDragId(null);
+    if (!task) return;
+    const targetPhase = phase === NO_PHASE ? null : phase;
+    const fields = {};
+    if (task.status !== status) fields.status = status;
+    if ((task.phase || null) !== targetPhase) fields.phase = targetPhase;
+    if (Object.keys(fields).length > 0) onCardMove(task.id, fields);
+  };
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-4 items-start">
-      {STATUS_OPTIONS.map(col => {
-        const items = byStatus.get(col.value) || [];
-        const isOver = overCol === col.value;
-        return (
-          <div
-            key={col.value}
-            onDragOver={(e) => { e.preventDefault(); if (overCol !== col.value) setOverCol(col.value); }}
-            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOverCol(c => (c === col.value ? null : c)); }}
-            onDrop={(e) => {
-              e.preventDefault();
-              setOverCol(null);
-              if (dragId != null) {
-                const task = tasks.find(t => t.id === dragId);
-                if (task && task.status !== col.value) onStatusChange(dragId, col.value);
-              }
-              setDragId(null);
-            }}
-            className={cn(
-              'flex-shrink-0 w-[280px] rounded-xl border transition-colors duration-[var(--dur-fast)]',
-              isOver ? 'border-[var(--color-accent)] bg-[var(--color-accent-tint)]' : 'border-[var(--color-border)] bg-[var(--color-paper-2)]',
-            )}
-          >
-            {/* Column header */}
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--color-border)]">
-              <span className="inline-flex items-center gap-1.5 min-w-0">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: col.dot }} />
-                <span className="font-display text-[13px] font-semibold tracking-tighter text-[var(--color-ink)] truncate">{col.label}</span>
-              </span>
-              <span className="font-mono text-[10px] tabular text-[var(--color-ink-3)] bg-[var(--color-paper-3)] px-1.5 py-px rounded flex-shrink-0">{items.length}</span>
+    <div className="overflow-x-auto pb-4">
+      <div style={{ minWidth }}>
+        {/* Encabezado de columnas (estado) */}
+        <div className="grid gap-3 sticky top-0 z-10 bg-[var(--color-paper)] pb-2 mb-1" style={colTemplate}>
+          {STATUS_OPTIONS.map(col => (
+            <div key={col.value} className="flex items-center gap-1.5 px-2 py-1.5">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: col.dot }} />
+              <span className="font-mono text-[10px] uppercase tracking-widest font-medium text-[var(--color-ink-3)] truncate">{col.label}</span>
             </div>
+          ))}
+        </div>
 
-            {/* Cards */}
-            <div className="p-2 space-y-2 min-h-[72px] max-h-[calc(100vh-300px)] overflow-y-auto">
-              {items.length === 0 ? (
-                <div className="py-8 text-center font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-4)]">
-                  {isOver ? 'Soltá aquí' : '—'}
+        {/* Swimlanes por fase */}
+        {phaseList.map(({ phase, tasks: phaseTasks }) => {
+          const collapsed = collapsedPhases?.has?.(phase);
+          const pc = phaseColor(phase);
+          const byStatus = new Map(STATUS_OPTIONS.map(s => [s.value, []]));
+          for (const t of phaseTasks) (byStatus.get(t.status) || byStatus.get('pending')).push(t);
+          return (
+            <div key={phase} className="mb-2">
+              {/* Carpeta de fase (header plegable) */}
+              <button
+                type="button"
+                onClick={() => togglePhase(phase)}
+                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors hover:brightness-[0.98]"
+                style={{ background: pc.tint }}
+              >
+                {collapsed ? <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: pc.accent }} /> : <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: pc.accent }} />}
+                <span className="w-1.5 h-4 rounded-sm flex-shrink-0" style={{ background: pc.accent }} />
+                <span className="font-display text-[13px] font-semibold tracking-tighter text-[var(--color-ink)] truncate">{phase}</span>
+                <span className="font-mono text-[10px] tabular text-[var(--color-ink-3)] bg-[var(--color-paper)] border border-[var(--color-border-2)] px-1.5 py-px rounded flex-shrink-0">{phaseTasks.length}</span>
+              </button>
+
+              {/* Celdas por estado (cuando la carpeta está expandida) */}
+              {!collapsed && (
+                <div className="grid gap-3 mt-2" style={colTemplate}>
+                  {STATUS_OPTIONS.map(col => {
+                    const items = byStatus.get(col.value) || [];
+                    const cellKey = `${phase}|${col.value}`;
+                    const isOver = overCell === cellKey;
+                    return (
+                      <div
+                        key={col.value}
+                        onDragOver={(e) => { e.preventDefault(); if (overCell !== cellKey) setOverCell(cellKey); }}
+                        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOverCell(c => (c === cellKey ? null : c)); }}
+                        onDrop={(e) => { e.preventDefault(); handleDrop(phase, col.value); }}
+                        className={cn(
+                          'rounded-lg border p-2 space-y-2 min-h-[60px] transition-colors duration-[var(--dur-fast)]',
+                          isOver ? 'border-[var(--color-accent)] bg-[var(--color-accent-tint)]' : 'border-[var(--color-border-2)] bg-[var(--color-paper-2)]',
+                        )}
+                      >
+                        {items.length === 0 ? (
+                          <div className="py-4 text-center font-mono text-[9px] uppercase tracking-widest text-[var(--color-ink-4)]">
+                            {isOver ? 'Soltá aquí' : ''}
+                          </div>
+                        ) : (
+                          items.map(t => (
+                            <BoardCard
+                              key={t.id}
+                              task={t}
+                              isSelected={t.id === selectedId}
+                              onSelect={() => onSelect(t.id)}
+                              onDragStart={() => setDragId(t.id)}
+                              onDragEnd={() => { setDragId(null); setOverCell(null); }}
+                            />
+                          ))
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              ) : (
-                items.map(t => (
-                  <BoardCard
-                    key={t.id}
-                    task={t}
-                    isSelected={t.id === selectedId}
-                    onSelect={() => onSelect(t.id)}
-                    onDragStart={() => setDragId(t.id)}
-                    onDragEnd={() => { setDragId(null); setOverCol(null); }}
-                  />
-                ))
               )}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
