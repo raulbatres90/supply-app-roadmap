@@ -3,7 +3,7 @@
  * Roadmap surface — stats / filters / table+gantt views with phase drill-down / side panel
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, Trash2, Save, MessageSquare, X,
@@ -338,7 +338,7 @@ export default function RoadmapPage() {
             members={members}
             isDeleted={trashMode}
             onClose={() => setSelectedTaskId(null)}
-            onUpdate={(fields) => updateMutation.mutate({ id: selectedTask.id, fields })}
+            onUpdate={(fields, id) => updateMutation.mutate({ id: id || selectedTask.id, fields })}
             onDelete={() => { if (confirm('¿Enviar esta tarea a la papelera? Podés restaurarla después.')) deleteMutation.mutate(selectedTask.id); }}
             onRestore={() => restoreMutation.mutate(selectedTask.id)}
             onPurge={() => { if (confirm('¿Borrar PERMANENTEMENTE? Esta acción no se puede deshacer.')) purgeMutation.mutate(selectedTask.id); }}
@@ -1705,27 +1705,61 @@ function HoverTooltip({ task }) {
 // ─── Side panel ─────────────────────────────────────────────────────────────
 function TaskDetailPanel({ task, members, onClose, onUpdate, onDelete, onRestore, onPurge, isDeleted, isSaving }) {
   const [local, setLocal] = useState(task);
-  const [debounce, setDebounce] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
-  // Acumulador de cambios pendientes: si el usuario toca varios campos dentro de
-  // la ventana del debounce, TODOS se guardan juntos. Antes solo se enviaba el
-  // último (el resto se perdía → parecía que "no dejaba guardar").
-  const pendingRef = React.useRef({});
+  // Cambios pendientes de guardar. Se guarda el id de la tarea junto con los
+  // campos: así un guardado que sale con retraso siempre aterriza en la tarea
+  // que se estaba editando, aunque el usuario ya haya abierto otra.
+  const pendingRef = useRef(null);   // { id, fields } | null
+  const timerRef   = useRef(null);
+  const shownIdRef = useRef(task.id);
 
-  useEffect(() => { setLocal(task); setHasChanges(false); pendingRef.current = {}; }, [task.id, task.updated_at]);
+  // onUpdate se recrea en cada render del padre; lo leemos por ref para que
+  // flush() pueda ser estable y servir de cleanup al desmontar.
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
+  const flush = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    const pending = pendingRef.current;
+    pendingRef.current = null;
+    if (pending && Object.keys(pending.fields).length > 0) {
+      onUpdateRef.current(pending.fields, pending.id);
+    }
+    setHasChanges(false);
+  }, []);
+
+  // Sincronización con el servidor SIN pisar lo que el usuario está escribiendo.
+  //
+  // Antes esto corría con [task.id, task.updated_at] y reseteaba `local` en cada
+  // guardado. Como updated_at cambia justo cuando vuelve el PATCH, todo lo que se
+  // tecleaba durante ese viaje de red se revertía y el guardado pendiente se
+  // descartaba: el síntoma era "hago un cambio y no me deja guardar".
+  useEffect(() => {
+    if (task.id !== shownIdRef.current) {
+      flush();                     // no perder lo pendiente de la tarea anterior
+      shownIdRef.current = task.id;
+      setLocal(task);
+      setHasChanges(false);
+      return;
+    }
+    // Misma tarea: sólo adoptamos la versión del servidor si no hay nada en vuelo.
+    if (!pendingRef.current && !timerRef.current) setLocal(task);
+  }, [task, flush]);
+
+  // Cerrar el panel dentro de la ventana del debounce tampoco debe perder nada.
+  useEffect(() => flush, [flush]);
 
   const queueSave = (fields) => {
     setLocal(prev => ({ ...prev, ...fields }));
-    pendingRef.current = { ...pendingRef.current, ...fields };
+    const prev = pendingRef.current;
+    pendingRef.current = {
+      id: task.id,
+      // Acumula: si se tocan varios campos dentro de la ventana, van todos juntos.
+      fields: { ...(prev && prev.id === task.id ? prev.fields : {}), ...fields },
+    };
     setHasChanges(true);
-    if (debounce) clearTimeout(debounce);
-    const id = setTimeout(() => {
-      const toSave = pendingRef.current;
-      pendingRef.current = {};
-      if (Object.keys(toSave).length > 0) onUpdate(toSave);
-      setHasChanges(false);
-    }, 600);
-    setDebounce(id);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(flush, 600);
   };
 
   const saveStatus = isSaving ? 'Guardando…' : (hasChanges ? 'Sin guardar' : 'Guardado');
