@@ -7,7 +7,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, Trash2, Save, MessageSquare, X,
-  GanttChartSquare, Table as TableIcon, ChevronDown, ChevronRight,
+  GanttChartSquare, KanbanSquare, ChevronDown, ChevronRight,
   Trash, RotateCcw, ArrowLeft,
 } from 'lucide-react';
 import { Crosshair } from 'lucide-react';
@@ -282,7 +282,7 @@ export default function RoadmapPage() {
           {/* View switch */}
           <div className="flex items-center gap-px border border-[var(--color-border)] rounded-md overflow-hidden">
             <button onClick={() => setView('table')} className={cn('px-2.5 h-8 text-[11px] font-medium flex items-center gap-1 transition-colors', view === 'table' ? 'bg-[var(--color-ink)] text-[var(--color-paper)]' : 'text-[var(--color-ink-2)] hover:bg-[var(--color-paper-3)]')}>
-              <TableIcon className="w-3 h-3" /> Tabla
+              <KanbanSquare className="w-3 h-3" /> Tablero
             </button>
             <div className="w-px h-4 bg-[var(--color-border)]" />
             <button onClick={() => setView('gantt')} className={cn('px-2.5 h-8 text-[11px] font-medium flex items-center gap-1 transition-colors', view === 'gantt' ? 'bg-[var(--color-ink)] text-[var(--color-paper)]' : 'text-[var(--color-ink-2)] hover:bg-[var(--color-paper-3)]')}>
@@ -319,7 +319,14 @@ export default function RoadmapPage() {
           {isLoading ? (
             <div className="py-24 text-center font-mono text-[11px] uppercase tracking-widest text-[var(--color-ink-4)]">Cargando…</div>
           ) : view === 'table' ? (
-            <TableView tasks={filteredTasks} selectedId={selectedTaskId} onSelect={setSelectedTaskId} collapsedPhases={collapsedPhases} togglePhase={togglePhase} />
+            <BoardView
+              tasks={filteredTasks}
+              selectedId={selectedTaskId}
+              onSelect={setSelectedTaskId}
+              collapsedPhases={collapsedPhases}
+              togglePhase={togglePhase}
+              onCardMove={(id, fields) => updateMutation.mutate({ id, fields })}
+            />
           ) : (
             <GanttView tasks={filteredTasks} selectedId={selectedTaskId} onSelect={setSelectedTaskId} collapsedPhases={collapsedPhases} togglePhase={togglePhase} />
           )}
@@ -402,6 +409,198 @@ function ProgressCard({ label, value }) {
 }
 
 // ─── Table view ─────────────────────────────────────────────────────────────
+// ─── Board (Kanban) view — carpetas de fase (swimlanes) × columnas de estado ──
+// Cada FASE es una carpeta plegable (Pre-launch, Billing, …, Soporte, Launch).
+// Al expandirla, sus tareas se reparten en columnas por ESTADO. Arrastrar una
+// tarjeta a una celda (fase, estado) cambia ambos. Drag & drop nativo, sin deps.
+// Soporte y Launch siempre aparecen como carpetas, aunque estén vacías.
+const ALWAYS_PHASES = ['Soporte', 'Launch'];
+const NO_PHASE = '(Sin fase)';
+
+function BoardView({ tasks, selectedId, onSelect, collapsedPhases, togglePhase, onCardMove }) {
+  const phaseList = useMemo(() => {
+    const map = new Map();
+    for (const p of ALWAYS_PHASES) map.set(p, []); // carpetas fijas, aunque vacías
+    for (const t of tasks) {
+      const k = t.phase || NO_PHASE;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(t);
+    }
+    const order = Object.keys(PHASE_COLOR);
+    const rank = (p) => {
+      const i = order.indexOf(p);
+      if (i !== -1) return i;
+      return p === NO_PHASE ? 999 : 500;
+    };
+    return [...map.keys()].sort((a, b) => rank(a) - rank(b)).map(phase => ({ phase, tasks: map.get(phase) }));
+  }, [tasks]);
+
+  const [dragId, setDragId] = useState(null);
+  const [overCell, setOverCell] = useState(null); // `${phase}|${status}`
+
+  const colTemplate = { gridTemplateColumns: `repeat(${STATUS_OPTIONS.length}, minmax(232px, 1fr))` };
+  const minWidth = STATUS_OPTIONS.length * 244;
+
+  const handleDrop = (phase, status) => {
+    if (dragId == null) return;
+    const task = tasks.find(t => t.id === dragId);
+    setOverCell(null);
+    setDragId(null);
+    if (!task) return;
+    const targetPhase = phase === NO_PHASE ? null : phase;
+    const fields = {};
+    if (task.status !== status) fields.status = status;
+    if ((task.phase || null) !== targetPhase) fields.phase = targetPhase;
+    if (Object.keys(fields).length > 0) onCardMove(task.id, fields);
+  };
+
+  return (
+    <div className="overflow-x-auto pb-4">
+      <div style={{ minWidth }}>
+        {/* Encabezado de columnas (estado) */}
+        <div className="grid gap-3 sticky top-0 z-10 bg-[var(--color-paper)] pb-2 mb-1" style={colTemplate}>
+          {STATUS_OPTIONS.map(col => (
+            <div key={col.value} className="flex items-center gap-1.5 px-2 py-1.5">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: col.dot }} />
+              <span className="font-mono text-[10px] uppercase tracking-widest font-medium text-[var(--color-ink-3)] truncate">{col.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Swimlanes por fase */}
+        {phaseList.map(({ phase, tasks: phaseTasks }) => {
+          const collapsed = collapsedPhases?.has?.(phase);
+          const pc = phaseColor(phase);
+          const byStatus = new Map(STATUS_OPTIONS.map(s => [s.value, []]));
+          for (const t of phaseTasks) (byStatus.get(t.status) || byStatus.get('pending')).push(t);
+          return (
+            <div key={phase} className="mb-2">
+              {/* Carpeta de fase (header plegable) */}
+              <button
+                type="button"
+                onClick={() => togglePhase(phase)}
+                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors hover:brightness-[0.98]"
+                style={{ background: pc.tint }}
+              >
+                {collapsed ? <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: pc.accent }} /> : <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: pc.accent }} />}
+                <span className="w-1.5 h-4 rounded-sm flex-shrink-0" style={{ background: pc.accent }} />
+                <span className="font-display text-[13px] font-semibold tracking-tighter text-[var(--color-ink)] truncate">{phase}</span>
+                <span className="font-mono text-[10px] tabular text-[var(--color-ink-3)] bg-[var(--color-paper)] border border-[var(--color-border-2)] px-1.5 py-px rounded flex-shrink-0">{phaseTasks.length}</span>
+              </button>
+
+              {/* Celdas por estado (cuando la carpeta está expandida) */}
+              {!collapsed && (
+                <div className="grid gap-3 mt-2" style={colTemplate}>
+                  {STATUS_OPTIONS.map(col => {
+                    const items = byStatus.get(col.value) || [];
+                    const cellKey = `${phase}|${col.value}`;
+                    const isOver = overCell === cellKey;
+                    return (
+                      <div
+                        key={col.value}
+                        onDragOver={(e) => { e.preventDefault(); if (overCell !== cellKey) setOverCell(cellKey); }}
+                        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOverCell(c => (c === cellKey ? null : c)); }}
+                        onDrop={(e) => { e.preventDefault(); handleDrop(phase, col.value); }}
+                        className={cn(
+                          'rounded-lg border p-2 space-y-2 min-h-[60px] transition-colors duration-[var(--dur-fast)]',
+                          isOver ? 'border-[var(--color-accent)] bg-[var(--color-accent-tint)]' : 'border-[var(--color-border-2)] bg-[var(--color-paper-2)]',
+                        )}
+                      >
+                        {items.length === 0 ? (
+                          <div className="py-4 text-center font-mono text-[9px] uppercase tracking-widest text-[var(--color-ink-4)]">
+                            {isOver ? 'Soltá aquí' : ''}
+                          </div>
+                        ) : (
+                          items.map(t => (
+                            <BoardCard
+                              key={t.id}
+                              task={t}
+                              isSelected={t.id === selectedId}
+                              onSelect={() => onSelect(t.id)}
+                              onDragStart={() => setDragId(t.id)}
+                              onDragEnd={() => { setDragId(null); setOverCell(null); }}
+                            />
+                          ))
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BoardCard({ task, isSelected, onSelect, onDragStart, onDragEnd }) {
+  const priority = PRIORITY_OPTIONS.find(p => p.value === task.priority) || PRIORITY_OPTIONS[1];
+  const pc = phaseColor(task.phase);
+  const hasMeta = task.subtask_count > 0 || task.comment_count > 0 || task.depends_on?.length > 0 || task.tags?.length > 0;
+  return (
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart(); }}
+      onDragEnd={onDragEnd}
+      onClick={onSelect}
+      className={cn(
+        'rounded-lg border bg-[var(--color-paper)] p-2.5 cursor-pointer transition-all duration-[var(--dur-fast)] hover:shadow-[var(--shadow-card)] active:cursor-grabbing',
+        isSelected ? 'border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]' : 'border-[var(--color-border-2)] hover:border-[var(--color-border)]',
+      )}
+      style={{ borderLeft: `3px solid ${pc.accent}` }}
+    >
+      {/* Phase chip + priority */}
+      <div className="flex items-center gap-2 mb-1.5">
+        {task.phase && (
+          <span className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-px rounded truncate" style={{ background: pc.tint, color: pc.accent }}>
+            {task.phase}
+          </span>
+        )}
+        <span className="text-[10px] font-semibold ml-auto flex-shrink-0" style={{ color: priority.fg }}>{priority.label}</span>
+      </div>
+
+      {/* Title */}
+      <div className="font-medium text-[13px] text-[var(--color-ink)] leading-snug">{task.title}</div>
+
+      {/* Meta line */}
+      {hasMeta && (
+        <div className="flex items-center gap-2.5 mt-1.5 text-[10px] font-mono text-[var(--color-ink-4)] flex-wrap">
+          {task.subtask_count > 0 && <span>{task.subtask_count} sub</span>}
+          {task.comment_count > 0 && (
+            <span className="flex items-center gap-0.5"><MessageSquare className="w-2.5 h-2.5" />{task.comment_count}</span>
+          )}
+          {task.depends_on?.length > 0 && <span>↶ {task.depends_on.length} deps</span>}
+          {task.tags?.length > 0 && task.tags.map(tag => (
+            <span key={tag} className="px-1 py-px rounded bg-[var(--color-paper-3)] text-[var(--color-ink-3)] normal-case">{tag}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Footer: assignee + fin + horas */}
+      <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-[var(--color-border-2)]">
+        <div className="min-w-0">
+          {task.assignees?.length === 1 ? (
+            <span className="inline-flex items-center gap-1.5 min-w-0">
+              <Avatar name={task.assignees[0].display_name} color={task.assignees[0].color} size={5} />
+              <span className="text-[11px] text-[var(--color-ink-2)] truncate max-w-[92px]">{task.assignees[0].display_name.split(' ')[0]}</span>
+            </span>
+          ) : task.assignees?.length > 1 ? (
+            <AvatarStack assignees={task.assignees} max={3} size={5} />
+          ) : (
+            <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-ink-4)]">—</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {task.end_date && <DateCell value={task.end_date} />}
+          {task.estimated_hours ? <span className="font-mono text-[10px] tabular text-[var(--color-ink-3)]">{task.estimated_hours}h</span> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TableView({ tasks, selectedId, onSelect, collapsedPhases, togglePhase }) {
   const groups = useMemo(() => groupByPhase(tasks), [tasks]);
   return (
@@ -1508,14 +1707,24 @@ function TaskDetailPanel({ task, members, onClose, onUpdate, onDelete, onRestore
   const [local, setLocal] = useState(task);
   const [debounce, setDebounce] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
+  // Acumulador de cambios pendientes: si el usuario toca varios campos dentro de
+  // la ventana del debounce, TODOS se guardan juntos. Antes solo se enviaba el
+  // último (el resto se perdía → parecía que "no dejaba guardar").
+  const pendingRef = React.useRef({});
 
-  useEffect(() => { setLocal(task); setHasChanges(false); }, [task.id, task.updated_at]);
+  useEffect(() => { setLocal(task); setHasChanges(false); pendingRef.current = {}; }, [task.id, task.updated_at]);
 
   const queueSave = (fields) => {
     setLocal(prev => ({ ...prev, ...fields }));
+    pendingRef.current = { ...pendingRef.current, ...fields };
     setHasChanges(true);
     if (debounce) clearTimeout(debounce);
-    const id = setTimeout(() => { onUpdate(fields); setHasChanges(false); }, 600);
+    const id = setTimeout(() => {
+      const toSave = pendingRef.current;
+      pendingRef.current = {};
+      if (Object.keys(toSave).length > 0) onUpdate(toSave);
+      setHasChanges(false);
+    }, 600);
     setDebounce(id);
   };
 

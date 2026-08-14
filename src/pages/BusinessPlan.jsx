@@ -35,6 +35,20 @@ const ACCENT_TINT = {
   amber:   'var(--color-amber-tint)',
 };
 
+// Hace que un <textarea> crezca con su contenido en vez de recortarlo tras N
+// filas. Sin esto las tarjetas del Canvas mostraban scroll interno y el texto
+// quedaba oculto — el bloque se leía "chiquito" aunque tuviera contenido largo.
+function useAutoGrow(value) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return ref;
+}
+
 export default function BusinessPlanPage() {
   const queryClient = useQueryClient();
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
@@ -113,7 +127,7 @@ export default function BusinessPlanPage() {
   }
 
   return (
-    <div className="px-6 py-6 space-y-8 max-w-[1280px] mx-auto">
+    <div className="px-6 py-6 space-y-8 max-w-[1800px] mx-auto">
       {/* ── Header ── */}
       <header>
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--color-accent-text)] mb-2">Plan de negocio</p>
@@ -143,7 +157,7 @@ export default function BusinessPlanPage() {
       {/* ── Sección Canvas ── */}
       <section>
         <SectionTitle num="1" title="Business Model Canvas" sub="Las 9 piezas de cómo gana dinero DFA" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
           {canvas.map(b => (
             <CanvasCard key={b.id} block={b} onUpdate={(fields) => updateMut.mutate({ id: b.id, fields })} onDelete={() => deleteMut.mutate(b.id)} />
           ))}
@@ -255,36 +269,40 @@ function useAutosave(block, onUpdate) {
 // ── Card del Canvas: título editable + body editable + status + accent strip ──
 function CanvasCard({ block, onUpdate, onDelete }) {
   const { local, queue, flush } = useAutosave(block, onUpdate);
+  const bodyRef = useAutoGrow(local.body);
 
   const accent = ACCENT_MAP[block.accent] || 'var(--color-accent)';
   const tint = ACCENT_TINT[block.accent] || 'var(--color-accent-tint)';
   const st = STATUS.find(s => s.value === local.status) || STATUS[0];
 
   return (
-    <div className="relative bg-[var(--color-paper)] border border-[var(--color-border)] rounded-xl shadow-[var(--shadow-card)] overflow-hidden p-4 group">
+    <div className="relative bg-[var(--color-paper)] border border-[var(--color-border)] rounded-xl shadow-[var(--shadow-card)] overflow-hidden p-5 group min-h-[220px] flex flex-col">
       <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: `linear-gradient(90deg, ${accent}, transparent 80%)` }} />
       <div className="absolute -top-6 -right-6 w-20 h-20 rounded-full opacity-50 blur-2xl" style={{ background: tint }} />
-      <div className="relative">
-        <div className="flex items-start justify-between gap-2 mb-2">
+      <div className="relative flex flex-col flex-1">
+        <div className="flex items-start justify-between gap-2 mb-3">
           <input
             value={local.title || ''}
             onChange={e => queue({ title: e.target.value })}
             onBlur={flush}
-            className="font-display text-[14px] font-semibold tracking-tighter text-[var(--color-ink)] bg-transparent focus:outline-none flex-1 min-w-0"
+            className="font-display text-[16px] font-semibold tracking-tighter text-[var(--color-ink)] bg-transparent focus:outline-none flex-1 min-w-0"
           />
           <button onClick={onDelete} className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--color-ink-4)] hover:text-[var(--color-rose)] flex-shrink-0" title="Eliminar bloque">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
         <Textarea
+          ref={bodyRef}
           value={local.body || ''}
           onChange={e => queue({ body: e.target.value })}
           onBlur={flush}
           placeholder="Escribí acá…"
-          rows={3}
-          className="text-[13px] border-0 px-0 py-0 focus:outline-none bg-transparent leading-relaxed resize-none mb-2"
+          rows={1}
+          className="text-[14px] border-0 px-0 py-0 focus:outline-none bg-transparent leading-relaxed resize-none mb-4 overflow-hidden flex-1"
         />
-        <StatusChips value={local.status} onChange={v => { queue({ status: v }); flush(); }} />
+        <div className="mt-auto">
+          <StatusChips value={local.status} onChange={v => { queue({ status: v }); flush(); }} />
+        </div>
       </div>
     </div>
   );
@@ -293,6 +311,7 @@ function CanvasCard({ block, onUpdate, onDelete }) {
 // ── Card de pregunta: prompt fijo + respuesta editable + status + crítica ──
 function QuestionCard({ block, onUpdate, onDelete }) {
   const { local, queue, flush } = useAutosave(block, onUpdate);
+  const bodyRef = useAutoGrow(local.body);
 
   const answered = (local.body || '').trim().length > 0;
 
@@ -320,13 +339,14 @@ function QuestionCard({ block, onUpdate, onDelete }) {
           </button>
         </div>
         <Textarea
+          ref={bodyRef}
           value={local.body || ''}
           onChange={e => queue({ body: e.target.value })}
           onBlur={flush}
           placeholder="Escribí acá la respuesta del equipo…"
-          rows={2}
+          rows={1}
           className={cn(
-            'text-[13px] leading-relaxed resize-none mb-2.5 mt-1',
+            'text-[13.5px] leading-relaxed resize-none mb-2.5 mt-1 overflow-hidden',
             answered ? 'bg-[var(--color-paper-2)]' : 'bg-[var(--color-amber-tint)]/40',
           )}
         />

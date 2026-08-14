@@ -79,9 +79,11 @@ export function Select({ value, onChange, children, className, ...props }) {
 }
 
 // ─── Textarea ───────────────────────────────────────────────────────────────
-export function Textarea({ className, ...props }) {
+// forwardRef: las tarjetas del Canvas miden scrollHeight para auto-crecer.
+export const Textarea = React.forwardRef(function Textarea({ className, ...props }, ref) {
   return (
     <textarea
+      ref={ref}
       className={cn(
         'w-full px-3 py-2 text-[13px] rounded-md resize-none',
         'bg-[var(--color-paper)] text-[var(--color-ink)]',
@@ -95,7 +97,7 @@ export function Textarea({ className, ...props }) {
       {...props}
     />
   );
-}
+});
 
 // ─── Card ───────────────────────────────────────────────────────────────────
 // Hairline border + soft elevation. The inset highlight gives a refined paper-on-paper feel.
