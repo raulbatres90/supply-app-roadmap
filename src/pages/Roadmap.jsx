@@ -1742,9 +1742,13 @@ function TaskDetailPanel({ task, members, onClose, onUpdate, onDelete, onRestore
       setHasChanges(false);
       return;
     }
-    // Misma tarea: sólo adoptamos la versión del servidor si no hay nada en vuelo.
-    if (!pendingRef.current && !timerRef.current) setLocal(task);
-  }, [task, flush]);
+    // Misma tarea: adoptamos la versión del servidor sólo si no hay NADA en vuelo
+    // — ni un cambio pendiente en el debounce, ni un PATCH en curso (isSaving).
+    // Sin el guard de isSaving, un refetch por foco de ventana DURANTE el guardado
+    // traía la versión PRE-guardado y pisaba lo que el usuario acababa de escribir:
+    // ese era el hueco que quedaba del "hago un cambio y no se guarda".
+    if (!pendingRef.current && !timerRef.current && !isSaving) setLocal(task);
+  }, [task, flush, isSaving]);
 
   // Cerrar el panel dentro de la ventana del debounce tampoco debe perder nada.
   useEffect(() => flush, [flush]);
