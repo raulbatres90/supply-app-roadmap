@@ -27,6 +27,29 @@ export const createPlanBlock = block => api.post(`${BASE}/plan`, block).then(r =
 export const updatePlanBlock = (id, block) => api.patch(`${BASE}/plan/${id}`, block).then(r => r.data);
 export const deletePlanBlock = id => api.delete(`${BASE}/plan/${id}`).then(r => r.data);
 
+// ── Métricas internas ───────────────────────────────────────────────────────
+// Cuelgan de otra ruta con su propio secreto: cruzan datos de TODOS los
+// clientes, y /api/internal-roadmap es de acceso público por enlace.
+// El token NO viaja en el bundle — lo escribe el equipo una vez y queda en este
+// navegador. Así no se publica al compartir la URL del roadmap.
+const METRICS_TOKEN_KEY = 'dfa_metrics_token';
+export const getMetricsToken = () => localStorage.getItem(METRICS_TOKEN_KEY) || '';
+export const setMetricsToken = t => localStorage.setItem(METRICS_TOKEN_KEY, t);
+export const clearMetricsToken = () => localStorage.removeItem(METRICS_TOKEN_KEY);
+
+// Solo se manda la cabecera si hay token. Mandarla vacía obliga al navegador a
+// hacer un preflight innecesario, y cualquier proxy o CORS que no la declare
+// hace fallar la petición antes de salir.
+const metricsHeaders = () => {
+  const t = getMetricsToken();
+  return t ? { 'x-internal-metrics-token': t } : {};
+};
+
+export const fetchMetrics = (days = 30) =>
+  api.get('/api/internal-metrics', { params: { days }, headers: metricsHeaders() }).then(r => r.data);
+export const captureSnapshot = () =>
+  api.post('/api/internal-metrics/snapshot', {}, { headers: metricsHeaders() }).then(r => r.data);
+
 export const listComments = taskId => api.get(`${BASE}/tasks/${taskId}/comments`).then(r => r.data);
 export const addComment = (taskId, body) => api.post(`${BASE}/tasks/${taskId}/comments`, { body }).then(r => r.data);
 export const deleteComment = id => api.delete(`${BASE}/comments/${id}`).then(r => r.data);

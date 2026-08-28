@@ -4,6 +4,7 @@ import { cn } from './lib/cn';
 import RoadmapPage from './pages/Roadmap.jsx';
 import TeamPage from './pages/Team.jsx';
 import BusinessPlanPage from './pages/BusinessPlan.jsx';
+import MetricsPage from './pages/Metrics.jsx';
 
 export default function App() {
   const [tab, setTab] = useState('roadmap');
@@ -26,6 +27,7 @@ export default function App() {
               <TabLink active={tab === 'roadmap'} onClick={() => setTab('roadmap')}>Tablero</TabLink>
               <TabLink active={tab === 'plan'} onClick={() => setTab('plan')}>Plan</TabLink>
               <TabLink active={tab === 'team'} onClick={() => setTab('team')}>Equipo</TabLink>
+              <TabLink active={tab === 'metrics'} onClick={() => setTab('metrics')}>Métricas</TabLink>
             </nav>
           </div>
 
@@ -37,6 +39,7 @@ export default function App() {
         {tab === 'roadmap' && <RoadmapPage />}
         {tab === 'plan' && <BusinessPlanPage />}
         {tab === 'team' && <TeamPage />}
+        {tab === 'metrics' && <MetricsPage />}
       </main>
 
       <ToastContainer />
