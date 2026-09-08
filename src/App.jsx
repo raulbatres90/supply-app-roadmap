@@ -5,6 +5,7 @@ import RoadmapPage from './pages/Roadmap.jsx';
 import TeamPage from './pages/Team.jsx';
 import BusinessPlanPage from './pages/BusinessPlan.jsx';
 import MetricsPage from './pages/Metrics.jsx';
+import PricingPage from './pages/Pricing.jsx';
 
 export default function App() {
   const [tab, setTab] = useState('roadmap');
@@ -27,6 +28,7 @@ export default function App() {
               <TabLink active={tab === 'roadmap'} onClick={() => setTab('roadmap')}>Tablero</TabLink>
               <TabLink active={tab === 'plan'} onClick={() => setTab('plan')}>Plan</TabLink>
               <TabLink active={tab === 'team'} onClick={() => setTab('team')}>Equipo</TabLink>
+              <TabLink active={tab === 'pricing'} onClick={() => setTab('pricing')}>Pricing</TabLink>
               <TabLink active={tab === 'metrics'} onClick={() => setTab('metrics')}>Métricas</TabLink>
             </nav>
           </div>
@@ -39,6 +41,7 @@ export default function App() {
         {tab === 'roadmap' && <RoadmapPage />}
         {tab === 'plan' && <BusinessPlanPage />}
         {tab === 'team' && <TeamPage />}
+        {tab === 'pricing' && <PricingPage />}
         {tab === 'metrics' && <MetricsPage />}
       </main>
 

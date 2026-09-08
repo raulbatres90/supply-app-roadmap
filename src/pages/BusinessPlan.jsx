@@ -285,7 +285,7 @@ function CanvasCard({ block, onUpdate, onDelete }) {
             value={local.title || ''}
             onChange={e => queue({ title: e.target.value })}
             onBlur={flush}
-            className="font-display text-[16px] font-semibold tracking-tighter text-[var(--color-ink)] bg-transparent focus:outline-none flex-1 min-w-0"
+            className="font-display text-[19px] font-semibold tracking-tighter text-[var(--color-ink)] bg-transparent focus:outline-none flex-1 min-w-0"
           />
           <button onClick={onDelete} className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--color-ink-4)] hover:text-[var(--color-rose)] flex-shrink-0" title="Eliminar bloque">
             <Trash2 className="w-3.5 h-3.5" />
@@ -298,7 +298,7 @@ function CanvasCard({ block, onUpdate, onDelete }) {
           onBlur={flush}
           placeholder="Escribí acá…"
           rows={1}
-          className="text-[14px] border-0 px-0 py-0 focus:outline-none bg-transparent leading-relaxed resize-none mb-4 overflow-hidden flex-1"
+          className="text-[15.5px] leading-[1.75] border-0 px-0 py-0 focus:outline-none bg-transparent resize-none mb-4 overflow-hidden flex-1"
         />
         <div className="mt-auto">
           <StatusChips value={local.status} onChange={v => { queue({ status: v }); flush(); }} />
@@ -331,7 +331,7 @@ function QuestionCard({ block, onUpdate, onDelete }) {
               value={local.title || ''}
               onChange={e => queue({ title: e.target.value })}
               onBlur={flush}
-              className="font-medium text-[13.5px] text-[var(--color-ink)] bg-transparent focus:outline-none flex-1 min-w-0 leading-snug"
+              className="font-medium text-[16px] text-[var(--color-ink)] bg-transparent focus:outline-none flex-1 min-w-0 leading-snug"
             />
           </div>
           <button onClick={onDelete} className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--color-ink-4)] hover:text-[var(--color-rose)] flex-shrink-0" title="Eliminar">
@@ -346,7 +346,7 @@ function QuestionCard({ block, onUpdate, onDelete }) {
           placeholder="Escribí acá la respuesta del equipo…"
           rows={1}
           className={cn(
-            'text-[13.5px] leading-relaxed resize-none mb-2.5 mt-1 overflow-hidden',
+            'text-[15px] leading-[1.7] resize-none mb-2.5 mt-1 overflow-hidden',
             answered ? 'bg-[var(--color-paper-2)]' : 'bg-[var(--color-amber-tint)]/40',
           )}
         />
